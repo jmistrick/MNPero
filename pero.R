@@ -328,40 +328,32 @@ min_n_seq <- abundance_long %>% group_by(FDNA) %>%
 #         axis.title = element_text(size=18))
 # dev.off()
 
+####### CREATE RAREFIED ABUNDANCE DATA (counts of all obs species, rarefied to min_n_seq ) #############
+################### CALCULATE ALPHA DIVERSITY METRICS ON RAREFIED DATA #################################
 
+####### NOTE: the EMU method DOES NOT give singleton or doubleton counts... 
+###### even with the non-thresholded EMU output, lowest read count for a sample is 10 reads
+## there will be warnings about using thresholded data because of this - can't do anything about it
+  ## that's as few counts as the EMU algorithm is going to give ¯\_(ツ)_/¯
+## as a result, there are some alpha diversity indices (related to richness) that cannot be estimated
+  ## ACE groups reads into rare (less than 10 reads) and not rare (more than 10 reads)
+  ## Chao looks at singletons
+  ### so these richness estimators will not work with EMU data
 
-
-
-
-
-
-###################################################################################
-### NEW for REVISED manuscript - Dec 2023
 #following Riffomonas project: "How to rarefy community data in R with vegan and tidyverse"
-
-## this code would replace the 'CREATE RAREFIED ABUNDANCE DATA' section which follows and uses
-  #phyloseq::rarefy_even_depth - instead using vegan::rarefy() to reshuffle the count data, 
-  #calculate the alpha diversity measures, save and repeat many times
-  #then average the alpha measures from many rarefied samples (this is now 'rarefaction')
-
-## the following code is NEW
-
-#use vegan::rarefy() function
-#uses the 'exact calculation' only works for Richness (not Shannon diversity)
-rarefy(abundance_vegan, min_n_seq) %>% #gives a richness value for each sample
-  as_tibble(rownames="sampleID")
-
-#vegan::rrarefy() generates one iteration of rarefaction
-#could do this, calculate alpha diversity (Shannon, Simpson), save it
-#then randomize again and do 100, 1,000, 10,000 iterations
-#then average the alpha diversity values across all the iterations
+#https://youtu.be/_OEdFjc1D9I?si=e7dRDXoP1MAHf9ry starts 11:22-12:34
+#using vegan::rrarefy() (instead of phyloseq::rarefy_even_depth) 
+  #to resample the count data at min_n_seq, calculate the alpha diversity measures, 
+  #save, and repeat many times
+  #then average the alpha measures per sample from the many iterations (this is now 'rarefaction')
 
 ###### Estimate alpha diversity metrics using rarefaction #######
-### using vegan:rrarefy() to resample the count numbers
+##### using vegan:rrarefy() to resample the count numbers #######
 
 #initialize a list to store results
-rareit_outputls <- list()
+rare_alpha.ls <- list()
 
+#for 100 iterations, rarefy count data, calculate alpha diversity, save, and repeat
 for(i in 1:100){
   
   #rarefy data (one iteration)
@@ -374,7 +366,7 @@ for(i in 1:100){
   #convert phyloseq to otu table
   rareit_phylo_otu <- otu_table(rareit_phylo, taxa_are_rows=TRUE)
   
-  #use phyloseq::estimate_richness() to get rich, shan, simp
+  #use phyloseq::estimate_richness() to get Richness, Shannon, Simpson diversity
   #calculate Shannon evenness manually
   #add column for iteration number, just to keep track
   out_it <- estimate_richness(rareit_phylo_otu, measures = c("Observed", "Shannon", "Simpson")) %>%
@@ -383,26 +375,23 @@ for(i in 1:100){
     rownames_to_column(var="FDNA")
   
   #save each iteration as an object in a list
-  rareit_outputls[[i]] <- out_it
+  rare_alpha.ls[[i]] <- out_it
   
 }
 
-#collapse the rareit_output list down to a df
+#collapse the rareit_output list (one list item per iteration) down to a df
+#counts of all taxa for all samples, across 100 iterations
 #really big, n_iterations * 140 samples number of rows
-rareit_outputdf <- do.call(rbind, rareit_outputls) 
+rare_alpha.df <- do.call(rbind, rare_alpha.ls) 
 
-#### from this point on, I'm just fitting the new rareit_output file to my old code 
-  #(so what follows is redundant)
-
-#then group by sample, average diversity indices across all 1000 iterations
-#join summary data to pero_datashort
-#can now average these values by site/treatment/whatever
-test <- rareit_outputdf %>% group_by(FDNA) %>% 
+#group by sample, average diversity indices for a given FDNA sample across all 100 iterations
+#join summary data to pero_datashort (metadata)
+rare_alpha.avg <- rare_alpha.df %>% group_by(FDNA) %>% 
   summarise(rare_obs = mean(Observed),
             rare_shan = mean(Shannon),
             rare_simp = mean(Simpson),
             rare_even = mean(Evenness)) %>%
-  inner_join(tag_loc, by="FDNA") %>%
+  inner_join(pero140_datashort, by="FDNA") %>%
   mutate(month = as.character(month)) %>%
   mutate(month.n = case_when(month == "June" ~ 1,
                              month == "July" ~ 2,
@@ -410,7 +399,7 @@ test <- rareit_outputdf %>% group_by(FDNA) %>%
   mutate(month.n = factor(month.n, levels=c("2", "1", "3")))
 
 #summary table of alpha diversity metrics
-test_month <- test %>% 
+rare_alpha_month <- rare_alpha.avg %>% 
   group_by(landscape_type, site_type, month) %>%
   summarise(n = length(FDNA),
             mean_obs = mean(rare_obs),
@@ -424,7 +413,8 @@ test_month <- test %>%
   ungroup() %>%
   mutate_if(is.numeric, round, digits=2) 
 
-test_CC <- test %>% 
+#alpha metrics for Cedar Creek across months
+rare_alpha_CC <- rare_alpha.avg %>% 
   filter(landscape_type=="Agricultural") %>%
   group_by(landscape_type, site_type) %>%
   summarise(n = length(FDNA),
@@ -441,10 +431,11 @@ test_CC <- test %>%
   mutate(month = "Summer") %>%
   relocate(month, .after=site_type)
 
-test_summary <- rbind(test_month, test_CC) %>%
+rare_alpha_summary <- rbind(rare_alpha_month, rare_alpha_CC) %>%
   arrange(landscape_type, site_type, month)
 
-alphatable_v2 <- test_summary %>%
+#alpha diversity metric summary table - MANUSCRIPT FIGURE S3
+alphatable <- rare_alpha_summary %>%
   mutate(obs = paste(mean_obs, "\u00B1", sd_obs, sep=" "),
          shan = paste(mean_shan, "\u00B1", sd_shan, sep=" "),
          simp = paste(mean_simp, "\u00B1", sd_simp, sep=" "),
@@ -459,92 +450,11 @@ alphatable_v2 <- test_summary %>%
   rename("Simpson Diversity \u00a7" = simp) %>% 
   rename("Evenness \u00b6" = even)
 
-write.csv(alphatable_v2, here("Table_S3_v2.csv"))
-#############################################################################################
+#save as .csv
+write.csv(alphatable, here("Table_S3_v2.csv"))
 
-## NEXT TO DO: feed this output in the models and downstream alpha diversity analyses 
-  #(ie the models and the plots)
-
-
-
-
-
-
-
-
-
-
-
-
-
-####### CREATE RAREFIED ABUNDANCE DATA (counts of all obs species, rarefied to min_n_seq ) #############
-
-### FOLLOWING CODE FROM: https://micca.readthedocs.io/en/latest/phyloseq.html
-
-#get rarefied counts of each observed species using phyloseq
-  #first, need a phyloseq object OTU table
-phyloseq_otu <- otu_table(abundance_phylo, taxa_are_rows=TRUE)
-
-#rarefy without replacement - SET.SEED(1) SO OTHERS CAN REPRODUCE MY RESULTS
-abund_rarefied <- rarefy_even_depth(phyloseq_otu, rngseed=1, sample.size = min_n_seq, replace=FALSE) 
-#40 OTUS removed because the were no longer present after random sampling (n=160)
-#36 OTUS removed (n=140)
-
-####### NOTE: the EMU method DOES NOT give singleton or doubleton counts... 
-    ###### even with the non-thresholded EMU output, lowest read count for a sample is 10 reads
-## ACE groups reads into rare (less than 10 reads) and not rare (more than 10 reads)
-## Chao looks at singletons
-### so these richness estimators will not work with EMU data
-
-#estimate richness on the rarefied data
-  #inner_join output to pero_datashort (metadata)
-rare_rich_ests <- estimate_richness(abund_rarefied, measures = c("Observed", "Shannon", "Simpson")) %>%
-  mutate(Evenness = Shannon/log(Observed)) %>% #calculate evenness (Shannon/ln(Richness))
-  rownames_to_column(var="FDNA") %>%
-  inner_join(pero_datashort, by="FDNA") %>%
-  mutate(month = as.character(month)) %>%
-  mutate(month.n = case_when(month == "June" ~ 1,
-                             month == "July" ~ 2,
-                             month == "August" ~ 3)) %>%
-  mutate(month.n = factor(month.n, levels=c("2", "1", "3")))
-
-#summary table of alpha diversity metrics
-rare_rich_est_month <- rare_rich_ests %>% 
-  group_by(landscape_type, site_type, month) %>%
-  summarise(n = length(FDNA),
-            mean_obs = mean(Observed),
-            sd_obs = sd(Observed),
-            mean_shan = mean(Shannon),
-            sd_shan = sd(Shannon),
-            mean_simp = mean(Simpson),
-            sd_simp = sd(Simpson),
-            mean_even = mean(Evenness),
-            sd_even = sd(Evenness)) %>%
-  ungroup() %>%
-  mutate_if(is.numeric, round, digits=2) 
-
-rare_rich_est_CC <- rare_rich_ests %>% 
-  filter(landscape_type=="Agricultural") %>%
-  group_by(landscape_type, site_type) %>%
-  summarise(n = length(FDNA),
-            mean_obs = mean(Observed),
-            sd_obs = sd(Observed),
-            mean_shan = mean(Shannon),
-            sd_shan = sd(Shannon),
-            mean_simp = mean(Simpson),
-            sd_simp = sd(Simpson),
-            mean_even = mean(Evenness),
-            sd_even = sd(Evenness)) %>%
-  ungroup() %>%
-  mutate_if(is.numeric, round, digits=2) %>%
-  mutate(month = "Summer") %>%
-  relocate(month, .after=site_type)
-
-rare_rich_est_summary <- rbind(rare_rich_est_month, rare_rich_est_CC) %>%
-  arrange(landscape_type, site_type, month)
-
-# #pretty summary table - IMAGE VERSION
-# rare_rich_est_summary %>%
+# #pretty summary table - .png VERSION
+# rare_alpha_summary %>%
 #   mutate(obs = paste(mean_obs, "\u00B1", sd_obs, sep=" "),
 #          shan = paste(mean_shan, "\u00B1", sd_shan, sep=" "),
 #          simp = paste(mean_simp, "\u00B1", sd_simp, sep=" "),
@@ -568,7 +478,7 @@ rare_rich_est_summary <- rbind(rare_rich_est_month, rare_rich_est_CC) %>%
 #                       "Simpson diversity index gives higher weight to common species when calculating diversity", 
 #                       "Evenness measures the relative abundance of different taxa (Evenness = Shannon / Richness)"))
 
-# rare_rich_est_summary %>%
+# rare_alpha_summary %>%
 #   mutate(obs = paste(mean_obs, "\u00B1", sd_obs, sep=" "),
 #          shan = paste(mean_shan, "\u00B1", sd_shan, sep=" "),
 #          simp = paste(mean_simp, "\u00B1", sd_simp, sep=" "),
@@ -588,30 +498,12 @@ rare_rich_est_summary <- rbind(rare_rich_est_month, rare_rich_est_CC) %>%
 #   row_spec(5:7, italic=TRUE, background="#F8F6F6") %>%
 #   row_spec(8:10, bold=TRUE)
 
-alphatable <- rare_rich_est_summary %>%
-  mutate(obs = paste(mean_obs, "\u00B1", sd_obs, sep=" "),
-         shan = paste(mean_shan, "\u00B1", sd_shan, sep=" "),
-         simp = paste(mean_simp, "\u00B1", sd_simp, sep=" "),
-         even = paste(mean_even, "\u00B1", sd_even, sep=" ")) %>%
-  select(!c(mean_obs, sd_obs, mean_shan, sd_shan, mean_simp, sd_simp, mean_even, sd_even)) %>%
-  rename(Landscape = landscape_type) %>% 
-  rename(Habitat = site_type) %>%
-  rename(Month = month) %>% 
-  rename(N = n) %>%
-  rename('Observed Richness \u2020' = obs) %>%
-  rename("Shannon Diversity \u2021" = shan) %>%
-  rename("Simpson Diversity \u00a7" = simp) %>% 
-  rename("Evenness \u00b6" = even)
-
-write.csv(alphatable, here("Table_S3.csv"))
-
-
 
 ########## BUILD A MODEL #################
 
 #cedar creek by month
 
-# cc <- rare_rich_ests %>% filter(location=="CCESR") %>%
+# cc <- rare_alpha.avg %>% filter(location=="CCESR") %>%
 #   mutate(month=as.character(month)) %>%
 #   mutate(month = factor(month, levels=c("June", "July", "August")))
 #   
@@ -633,25 +525,26 @@ write.csv(alphatable, here("Table_S3.csv"))
 #### before modeling: ######
 
 # #visualize response distribution
-# hist(rare_rich_ests$Observed) #normalish
-# hist(rare_rich_ests$Shannon) #slight left skew
-# hist(rare_rich_ests$Simpson) #left skew
-# hist(rare_rich_ests$Evenness) #slight left skew
+# hist(rare_alpha.avg$Observed) #normalish
+# hist(rare_alpha.avg$Shannon) #slight left skew
+# hist(rare_alpha.avg$Simpson) #left skew
+# hist(rare_alpha.avg$Evenness) #slight left skew
 
 ### MODELING ###
 
 #### RICHNESS MODEL - LINEAR REGRESSION ####
 
 # 1. plot the full model
-rich.mod <- lm(Observed ~ landscape_type + site_type + landscape_type:site_type + 
+rich.mod <- lm(rare_obs ~ landscape_type + site_type + landscape_type:site_type + 
                  sex + reproductive + body_mass + month.n, 
-               data=rare_rich_ests)
-# make a null model and compare full to null by AIC (difference of 2-4 is meaningful, lower AIC wins)
-null.mod <- lm(Observed ~ 1, data=rare_rich_ests)
-AIC(null.mod, rich.mod)
-# 2. check out the summary
-rich.summ <- summary(rich.mod)
-anova(rich.mod)
+               data=rare_alpha.avg)
+# #model diagnostics
+# # make a null model and compare full to null by AIC (difference of 2-4 is meaningful, lower AIC wins)
+# null.mod <- lm(rare_obs ~ 1, data=rare_alpha.avg)
+# AIC(null.mod, rich.mod)
+# # 2. check out the summary
+# rich.summ <- summary(rich.mod)
+# anova(rich.mod)
 #to get 95% CI for model params
 richCI <- as.data.frame(confint(rich.mod, level=0.95)) %>% #gives CI for all params, can also specify which you want
   rownames_to_column(var = "param")
@@ -661,45 +554,45 @@ rich <- as.data.frame(rich.summ$coefficients) %>% rownames_to_column(var="param"
 
 write.csv(rich, here("mod.rich.csv")) #save this to make a table for the supplement
 
-# 3. look at the residuals vs fitted plots (want nice clouds, look weird patterns!)
-#### USE YOUR EYEBALLS FIRST! If the residual plots are fucked up, then go for the formal diagnostics
-#base R plots (hit return to see them all)
-plot(rich.mod) #diagnostic plots
-#or use 'performance' package
-library(performance)
-check_model(rich.mod) #diagnostic plots
-
-# 4. IF THINGS ARE FUCKY - then run some formal diagnostics:
-#LINEARITY
-
-#INDEPENDENCE (of data and of residuals) 
-
-#MULTICOLLINEARITY
-
-library(car)
-vif(rich.mod) #variance inflation factor (if parameters are correlated)
-#under 2 is great, under 4 is good enough (Zuur et al 2009)
-
-#NORMALITY (of residuals)
-
-#plot a histogram of your response variable and numeric independent vars (should be normal or normalish)
-#Q-Q plot also addresses this
-#use Shapiro-Wilkes as well if things seem wonky
-
-#EQUIVARIANCE (homoscedasticity)
-
-library(lmtest)
-bptest(rich.mod) #for regressions for homoscedasticity (use if your data is goofy, ignore elsewise)
-#Levine test (use in place of bp) for glm or mixed-models
-
-####### JASMINE has good explanations with more detail in her code for Lucie and Mathilde
+# # 3. look at the residuals vs fitted plots (want nice clouds, look weird patterns!)
+# #### USE YOUR EYEBALLS FIRST! If the residual plots are fucked up, then go for the formal diagnostics
+# #base R plots (hit return to see them all)
+# plot(rich.mod) #diagnostic plots
+# #or use 'performance' package
+# library(performance)
+# check_model(rich.mod) #diagnostic plots
+# 
+# # 4. IF THINGS ARE UGLY - then run some formal diagnostics:
+# #LINEARITY
+# 
+# #INDEPENDENCE (of data and of residuals) 
+# 
+# #MULTICOLLINEARITY
+# 
+# library(car)
+# vif(rich.mod) #variance inflation factor (if parameters are correlated)
+# #under 2 is great, under 4 is good enough (Zuur et al 2009)
+# 
+# #NORMALITY (of residuals)
+# 
+# #plot a histogram of your response variable and numeric independent vars (should be normal or normalish)
+# #Q-Q plot also addresses this
+# #use Shapiro-Wilkes as well if things seem wonky
+# 
+# #EQUIVARIANCE (homoscedasticity)
+# 
+# library(lmtest)
+# bptest(rich.mod) #for regressions for homoscedasticity (use if your data is goofy, ignore elsewise)
+# #Levine test (use in place of bp) for glm or mixed-models
+# 
+# ####### JASMINE has good explanations with more detail in her code for Lucie and Mathilde
 
 
 #### SHANNON MODEL - LINEAR REGRESSION ####
 
-shan.mod <- lm(Shannon ~ landscape_type + site_type + landscape_type:site_type + 
+shan.mod <- lm(rare_shan ~ landscape_type + site_type + landscape_type:site_type + 
                  sex + reproductive + body_mass + month.n, 
-               data=rare_rich_ests)
+               data=rare_alpha.avg)
 summary(shan.mod)
 shan.summ <- summary(shan.mod)
 #to get 95% CI for model params
@@ -710,13 +603,14 @@ shan <- as.data.frame(shan.summ$coefficients) %>% rownames_to_column(var="param"
   mutate(mod = "Shannon") %>% mutate_if(is.numeric, round, digits=3)
 write.csv(shan, here("mod.shan.csv"))
 
-plot(shan.mod)
-# vif(shan.mod) #variance inflation factor (if parameters are correlated) <4 is okay, <2 is great
-bptest(shan.mod) #for homoskedasticity, this is 0.051 - not a amazing but maybe okay, plots looked okay
-check_model(shan.mod)
-
-null.mod <- lm(Shannon ~ 1, data=rare_rich_ests)
-AIC(null.mod, shan.mod)
+# #model diagnostics
+# plot(shan.mod)
+# # vif(shan.mod) #variance inflation factor (if parameters are correlated) <4 is okay, <2 is great
+# bptest(shan.mod) #for homoskedasticity, this is 0.051 - not a amazing but maybe okay, plots looked okay
+# check_model(shan.mod)
+# 
+# null.mod <- lm(Shannon ~ 1, data=rare_alpha.avg)
+# AIC(null.mod, shan.mod)
 
 
 #### Beta regression for proportional continuous data (between 0-1) like Simpson and Evennness
@@ -726,10 +620,10 @@ library(betareg)
 
 #### SIMPSON MODEL - BETA REGRESSION ####
 
-simp.mod <- betareg(Simpson ~ landscape_type + site_type + landscape_type:site_type + 
+simp.mod <- betareg(rare_simp ~ landscape_type + site_type + landscape_type:site_type + 
                       sex + reproductive + body_mass + month.n, 
                     link="logit",
-                    data=rare_rich_ests)
+                    data=rare_alpha.avg)
 simp.summ <- summary(simp.mod)
 #to get 95% CI for model params
 simpCI <- as.data.frame(confint(simp.mod, level=0.95)) %>% #gives CI for all params, can also specify which you want
@@ -739,19 +633,20 @@ simp <- as.data.frame(simp.summ$coefficients$mean) %>% rownames_to_column(var="p
   mutate(mod = "Simpson") %>% mutate_if(is.numeric, round, digits=3)
 write.csv(simp, here("mod.simp.csv"))
 
-plot(simp.mod)
-# vif(simp.mod) #variance inflation factor (if parameters are correlated) <4 is okay, <2 is great
-check_model(simp.mod)
-
-null.mod <- lm(Simpson ~ 1, data=rare_rich_ests)
-AIC(null.mod, simp.mod)
+# #model diagnostics
+# plot(simp.mod)
+# # vif(simp.mod) #variance inflation factor (if parameters are correlated) <4 is okay, <2 is great
+# check_model(simp.mod)
+# 
+# null.mod <- lm(Simpson ~ 1, data=rare_alpha.avg)
+# AIC(null.mod, simp.mod)
 
 #### EVENNESS MODEL - BETA REGRESSION ####
 
-even.mod <- betareg(Evenness ~ landscape_type + site_type + landscape_type:site_type + 
+even.mod <- betareg(rare_even ~ landscape_type + site_type + landscape_type:site_type + 
                       sex + reproductive + body_mass + month.n, 
                     link="logit",
-                    data=rare_rich_ests)
+                    data=rare_alpha.avg)
 summary(even.mod)
 even.summ <- summary(even.mod)
 #to get 95% CI for model params
@@ -762,20 +657,21 @@ even <- as.data.frame(even.summ$coefficients$mean) %>% rownames_to_column(var="p
   mutate(mod = "Evenness") %>% mutate_if(is.numeric, round, digits=3)
 write.csv(even, here("mod.even.csv"))
 
-plot(even.mod)
-# vif(even.mod) #variance inflation factor (if parameters are correlated) <4 is okay, <2 is great
-bptest(even.mod) #for homoskedasticity
-check_model(even.mod)
-
-null.mod <- lm(Evenness ~ 1, data=rare_rich_ests)
-AIC(null.mod, even.mod)
+# #model diagnostics
+# plot(even.mod)
+# # vif(even.mod) #variance inflation factor (if parameters are correlated) <4 is okay, <2 is great
+# bptest(even.mod) #for homoskedasticity
+# check_model(even.mod)
+# 
+# null.mod <- lm(Evenness ~ 1, data=rare_alpha.avg)
+# AIC(null.mod, even.mod)
 
 
 ######### visualize ###########
 
 #plot observed
-obs.plot <- rare_rich_ests %>%
-  ggplot(aes(y=Observed, x=site_type, fill=loc_site, alpha=0.7)) +
+obs.plot <- rare_alpha.avg %>%
+  ggplot(aes(y=rare_obs, x=site_type, fill=loc_site, alpha=0.7)) +
   facet_wrap(~landscape_type) +
   geom_violin() +
   theme_light() +
@@ -798,8 +694,8 @@ obs.plot <- rare_rich_ests %>%
   labs(y = "Observed Species Richness")
 
 #plot Shannon
-shan.plot <- rare_rich_ests %>%
-  ggplot(aes(y=Shannon, x=site_type, fill=loc_site, alpha=0.7)) +
+shan.plot <- rare_alpha.avg %>%
+  ggplot(aes(y=rare_shan, x=site_type, fill=loc_site, alpha=0.7)) +
   facet_wrap(~landscape_type) +
   geom_violin() +
   theme_light() +
@@ -828,8 +724,8 @@ shan.plot <- rare_rich_ests %>%
 #   "#A67326", "#F0C907")
 
 #plot Simpson
-simp.plot <- rare_rich_ests %>%
-  ggplot(aes(y=Simpson, x=site_type, fill=loc_site, alpha=0.7)) +
+simp.plot <- rare_alpha.avg %>%
+  ggplot(aes(y=rare_simp, x=site_type, fill=loc_site, alpha=0.7)) +
   facet_wrap(~landscape_type) +
   geom_violin() +
   theme_light() +
@@ -851,8 +747,8 @@ simp.plot <- rare_rich_ests %>%
   labs(y = "Simpson Diversity Index")
 
 #plot Evennness
-even.plot <- rare_rich_ests %>%
-  ggplot(aes(y=Evenness, x=site_type, fill=loc_site, alpha=0.7)) +
+even.plot <- rare_alpha.avg %>%
+  ggplot(aes(y=rare_even, x=site_type, fill=loc_site, alpha=0.7)) +
   facet_wrap(~landscape_type) +
   geom_violin() +
   theme_light() +
@@ -871,7 +767,7 @@ even.plot <- rare_rich_ests %>%
         axis.text.y = element_text(size=14),
         axis.text.x = element_text(size=18),
         plot.margin = margin(t = 25, r = 10, b = 10, l = 25, unit = "pt")) +
-  labs(y = "Species Evenness")
+  labs(y = "Shannon Species Evenness")
 
 ######### COMPOSITE PLOT (publication-ready using cowplot) ##########
 
@@ -888,7 +784,7 @@ dev.off()
 
 # library(ggbeeswarm)
 # 
-# rare_rich_ests %>% 
+# rare_alpha.avg %>% 
 #   select(Observed, Shannon, Simpson, Evenness, loc_site) %>%
 #   pivot_longer(-loc_site, values_to = "est", names_to="stat") %>%
 #   mutate(stat = factor(stat, levels=c("Observed", "Shannon", "Simpson", "Evenness"))) %>%
