@@ -1001,7 +1001,7 @@ centroid <- pero_nmds %>% group_by(loc_site) %>%
 #   "#A67326", "#F0C907")
 
 #plot NMDS, centroids, and ellipses
-png(here("NEWcommunity_NMDS.png"), width=700, height = 600)
+png(here("community_NMDS_k4.png"), width=700, height = 600)
 pero_nmds %>%
   ggplot(aes(x=NMDS1, y=NMDS2, color=loc_site)) +
   geom_point(size = 2) +
@@ -1035,6 +1035,142 @@ dev.off()
 # values=c("#A82433", "#EA99A3",
 #          "#0060A2", "#61CFFA")
 
+
+######### Reviewer asked to see NMDS in 2 vs 3 vs 4 dimensions ###########
+
+###### four dimensions to fit in a 3-panel figure
+nmds_k4 <- pero_nmds %>%
+  ggplot(aes(x=NMDS1, y=NMDS2, color=loc_site)) +
+  geom_point(size = 2) +
+  scale_color_manual(name="Landscape-Habitat Type", 
+                     labels=c("Agricultural-Forest", "Agricultural-Synanthropic", 
+                              "Undeveloped-Forest", "Undeveloped-Synanthropic"),
+                     values=c("#A67326", "#F0C907",
+                              "#2c7c94", "#a6d0c8")) +
+  stat_ellipse(show.legend = FALSE, alpha=0.75, linewidth=1) +
+  geom_point(data=centroid, size=5, shape=21, color="black", alpha=0.75,
+             aes(fill=loc_site),
+             show.legend = FALSE) +
+  xlim(-0.52, 0.61) + ylim(-0.58, 0.55) +
+  scale_fill_manual(values=c("#A67326", "#F0C907",
+                             "#2c7c94", "#a6d0c8")) +
+  theme_light() +
+  labs(title="NMDS k=4") +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size=24),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=14),
+        axis.text = element_text(size=16),
+        axis.title = element_text(size=18),
+        panel.background = element_rect(fill='white'),
+        plot.margin = margin(t = 0, r = 25, b = 0, l = 25, unit = "pt")) +
+  guides(color=guide_legend(nrow=2)) +
+  annotate(geom = "label", x=0.42, y=0.52, size = 7,
+           label = paste("Stress:", round(nmds_results$stress, digits = 3)))
+
+#####two dimensions
+#run NMDS on distance matrix (FDNA IN NUMERICAL ORDER!)
+set.seed(19940211) #best solution not repeated after 20 tries >> IS THIS A PROBLEM??
+nmds_results2 <- metaMDS(abundance_dist, k=2) 
+
+#create tibble of NMDS values, add FDNA numbers, metadata
+pero_nmds2 <- nmds_results2 %>%
+  scores() %>% 
+  as_tibble(rownames="FDNA") %>%
+  full_join(pero140_datashort, by="FDNA") %>%
+  ungroup()
+
+#generate centroids for each loc_site
+centroid2 <- pero_nmds2 %>% group_by(loc_site) %>%
+  summarise(NMDS1=mean(NMDS1), NMDS2=mean(NMDS2))
+
+#plot NMDS, centroids, and ellipses
+# png(here("community_NMDS_k2.png"), width=700, height = 600)
+nmds_k2 <- pero_nmds2 %>%
+  ggplot(aes(x=NMDS1, y=NMDS2, color=loc_site)) +
+  geom_point(size = 2) +
+  scale_color_manual(name="Landscape-Habitat Type", 
+                     labels=c("Agricultural-Forest", "Agricultural-Synanthropic", 
+                              "Undeveloped-Forest", "Undeveloped-Synanthropic"),
+                     values=c("#A67326", "#F0C907",
+                              "#2c7c94", "#a6d0c8")) +
+  stat_ellipse(show.legend = FALSE, alpha=0.75, linewidth=1) +
+  geom_point(data=centroid, size=5, shape=21, color="black", alpha=0.75,
+             aes(fill=loc_site),
+             show.legend = FALSE) +
+  xlim(-0.52, 0.61) + ylim(-0.58, 0.55) +
+  scale_fill_manual(values=c("#A67326", "#F0C907",
+                             "#2c7c94", "#a6d0c8")) +
+  theme_light() +
+  labs(title="NMDS k=2") +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size=24),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=14),
+        axis.text = element_text(size=16),
+        axis.title = element_text(size=18),
+        panel.background = element_rect(fill='white'),
+        plot.margin = margin(t = 0, r = 25, b = 0, l = 25, unit = "pt")) +
+  guides(color=guide_legend(nrow=2)) +
+  annotate(geom = "label", x=0.42, y=0.52, size = 7,
+           label = paste("Stress:", round(nmds_results2$stress, digits = 3)))
+# dev.off()
+
+
+#####three dimensions
+#run NMDS on distance matrix (FDNA IN NUMERICAL ORDER!)
+set.seed(19940211) #best solution not repeated after 20 tries >> IS THIS A PROBLEM??
+nmds_results3 <- metaMDS(abundance_dist, k=3) 
+
+#create tibble of NMDS values, add FDNA numbers, metadata
+pero_nmds3 <- nmds_results3 %>%
+  scores() %>% 
+  as_tibble(rownames="FDNA") %>%
+  full_join(pero140_datashort, by="FDNA") %>%
+  ungroup()
+
+#generate centroids for each loc_site
+centroid3 <- pero_nmds3 %>% group_by(loc_site) %>%
+  summarise(NMDS1=mean(NMDS1), NMDS2=mean(NMDS2))
+
+#plot NMDS, centroids, and ellipses
+# png(here("community_NMDS_k3.png"), width=700, height = 600)
+nmds_k3 <- pero_nmds3 %>%
+  ggplot(aes(x=NMDS1, y=NMDS2, color=loc_site)) +
+  geom_point(size = 2) +
+  scale_color_manual(name="Landscape-Habitat Type", 
+                     labels=c("Agricultural-Forest", "Agricultural-Synanthropic", 
+                              "Undeveloped-Forest", "Undeveloped-Synanthropic"),
+                     values=c("#A67326", "#F0C907",
+                              "#2c7c94", "#a6d0c8")) +
+  stat_ellipse(show.legend = FALSE, alpha=0.75, linewidth=1) +
+  geom_point(data=centroid, size=5, shape=21, color="black", alpha=0.75,
+             aes(fill=loc_site),
+             show.legend = FALSE) +
+  xlim(-0.52, 0.61) + ylim(-0.58, 0.55) +
+  scale_fill_manual(values=c("#A67326", "#F0C907",
+                             "#2c7c94", "#a6d0c8")) +
+  theme_light() +
+  labs(title="NMDS k=3") +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size=24),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=14),
+        axis.text = element_text(size=16),
+        axis.title = element_text(size=18),
+        panel.background = element_rect(fill='white'),
+        plot.margin = margin(t = 0, r = 25, b = 0, l = 25, unit = "pt")) +
+  guides(color=guide_legend(nrow=2)) +
+  annotate(geom = "label", x=0.42, y=0.52, size = 7,
+           label = paste("Stress:", round(nmds_results3$stress, digits = 3)))
+# dev.off()
+
+
+#cowplot to see k=2 vs 3 vs 4
+png(here("compare_NMDS.png"), width=1800, height = 600)
+plot_grid(nmds_k2, nmds_k3, nmds_k4, ncol = 3, 
+          labels = "AUTO", label_size = 36)
+dev.off()
 
 ##################################################################
 # # code from: https://www.rpubs.com/RGrieger/545184
