@@ -350,39 +350,47 @@ min_n_seq <- abundance_long %>% group_by(FDNA) %>%
 ###### Estimate alpha diversity metrics using rarefaction #######
 ##### using vegan:rrarefy() to resample the count numbers #######
 
-#initialize a list to store results
-rare_alpha.ls <- list()
-
-#for 100 iterations, rarefy count data, calculate alpha diversity, save, and repeat
-for(i in 1:100){
-  
-  #rarefy data (one iteration)
-  #output in vegan format: taxa are the columns, samples are the rows, sampleIDs are row names
-  rareit_vegan <- rrarefy(abundance_vegan, sample=min_n_seq) #min_n_seq = 74,517
-  
-  #convert rareit_vegan to phyloseq abundance table
-  #rows are taxa, columns are samples - in numerical order, rowname is taxID
-  rareit_phylo <- rareit_vegan %>% t()
-  #convert phyloseq to otu table
-  rareit_phylo_otu <- otu_table(rareit_phylo, taxa_are_rows=TRUE)
-  
-  #use phyloseq::estimate_richness() to get Richness, Shannon, Simpson diversity
-  #calculate Shannon evenness manually
-  #add column for iteration number, just to keep track
-  out_it <- estimate_richness(rareit_phylo_otu, measures = c("Observed", "Shannon", "Simpson")) %>%
-    mutate(Evenness = Shannon/log(Observed)) %>% #calculate evenness (Shannon/ln(Richness))
-    # mutate(iteration = i) %>%
-    rownames_to_column(var="FDNA")
-  
-  #save each iteration as an object in a list
-  rare_alpha.ls[[i]] <- out_it
-  
-}
-
-#collapse the rareit_output list (one list item per iteration) down to a df
-#counts of all taxa for all samples, across 100 iterations
-#really big, n_iterations * 140 samples number of rows
-rare_alpha.df <- do.call(rbind, rare_alpha.ls) 
+#commented out on Dec 18 2023
+# #do a lil set.seed so I can reproduce these results
+# set.seed(2111994)
+# 
+# #initialize a list to store results
+# rare_alpha.ls <- list()
+# 
+# #for 100 iterations, rarefy count data, calculate alpha diversity, save, and repeat
+# for(i in 1:100){
+#   
+#   #rarefy data (one iteration)
+#   #output in vegan format: taxa are the columns, samples are the rows, sampleIDs are row names
+#   rareit_vegan <- rrarefy(abundance_vegan, sample=min_n_seq) #min_n_seq = 74,517
+#   
+#   #convert rareit_vegan to phyloseq abundance table
+#   #rows are taxa, columns are samples - in numerical order, rowname is taxID
+#   rareit_phylo <- rareit_vegan %>% t()
+#   #convert phyloseq to otu table
+#   rareit_phylo_otu <- otu_table(rareit_phylo, taxa_are_rows=TRUE)
+#   
+#   #use phyloseq::estimate_richness() to get Richness, Shannon, Simpson diversity
+#   #calculate Shannon evenness manually
+#   #add column for iteration number, just to keep track
+#   out_it <- estimate_richness(rareit_phylo_otu, measures = c("Observed", "Shannon", "Simpson")) %>%
+#     mutate(Evenness = Shannon/log(Observed)) %>% #calculate evenness (Shannon/ln(Richness))
+#     # mutate(iteration = i) %>%
+#     rownames_to_column(var="FDNA")
+#   
+#   #save each iteration as an object in a list
+#   rare_alpha.ls[[i]] <- out_it
+#   
+# }
+# 
+# #collapse the rareit_output list (one list item per iteration) down to a df
+# #counts of all taxa for all samples, across 100 iterations
+# #really big, n_iterations * 140 samples number of rows
+# rare_alpha.df <- do.call(rbind, rare_alpha.ls) 
+# #save it
+# saveRDS(rare_alpha.df, file="rare_alpha.df_v12.18.2023.RDS")
+#load it
+rare_alpha.df <- readRDS(file = "rare_alpha.df_v12.18.2023.RDS") 
 
 #group by sample, average diversity indices for a given FDNA sample across all 100 iterations
 #join summary data to pero_datashort (metadata)
@@ -532,6 +540,8 @@ write.csv(alphatable, here("Table_S3_v2.csv"))
 
 ### MODELING ###
 
+###-----all of these models have been run with Dec 18 2023 version of alpha_rare
+
 #### RICHNESS MODEL - LINEAR REGRESSION ####
 
 # 1. plot the full model
@@ -543,7 +553,7 @@ rich.mod <- lm(rare_obs ~ landscape_type + site_type + landscape_type:site_type 
 # null.mod <- lm(rare_obs ~ 1, data=rare_alpha.avg)
 # AIC(null.mod, rich.mod)
 # # 2. check out the summary
-# rich.summ <- summary(rich.mod)
+rich.summ <- summary(rich.mod)
 # anova(rich.mod)
 #to get 95% CI for model params
 richCI <- as.data.frame(confint(rich.mod, level=0.95)) %>% #gives CI for all params, can also specify which you want
@@ -669,53 +679,130 @@ write.csv(even, here("mod.even.csv"))
 
 ######### visualize ###########
 
+########### WORKING HERE - to show pvalues on plots
+#### but can't do it with facets... so figure that out
+
+# library(ggh4x) #this might need to be loaded without phyloseq running
+# ggplot(aes(y=rare_obs, x=interaction(site_type, landscape_type), 
+#                fill=loc_site, alpha=0.7)) +
+#   scale_x_discrete(guide = guide_axis_nested(), name="location_type") 
+#############################################################
+
 #plot observed
+
+#https://www.r-bloggers.com/2017/06/add-p-values-and-significance-levels-to-ggplots/
+library(ggpubr)
+# Perform pairwise comparisons
+compare_means(rare_obs ~ loc_site,  data = rare_alpha.avg)
+# Visualize: Specify the comparisons you want
+my_comparisons <- list( c("Agricultural_Forest", "Undeveloped_Forest"), 
+                        c("Agricultural_Synanthropic", "Undeveloped_Forest"), 
+                        c("Undeveloped_Forest", "Undeveloped_Synanthropic") )
+
+# obs.plot <- rare_alpha.avg %>%
+#   ggplot(aes(y=rare_obs, x=site_type, fill=loc_site, alpha=0.7)) +
+#   facet_wrap(~landscape_type) +
+#   geom_violin() +
+#   theme_light() +
+#   scale_fill_manual(values=c("#A67326", "#F0C907",
+#                              "#2c7c94", "#a6d0c8")) +
+#   stat_summary(fun = "mean",
+#                geom = "crossbar", 
+#                width = 0.5,
+#                colour = "black") +
+#   geom_jitter(width=0.1, alpha=0.5) +
+#   theme(legend.position = "none",
+#         strip.text = element_text(size=18, color="black"),
+#         strip.background=element_rect(fill="#d3d3d3"),
+#         axis.title.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.title.y = element_text(size=22),
+#         axis.text.y = element_text(size=14),
+#         plot.margin = margin(t = 10, r = 25, b = 0, l = 10, unit = "pt")) +
+#   labs(y = "Observed Species Richness")
+
 obs.plot <- rare_alpha.avg %>%
-  ggplot(aes(y=rare_obs, x=site_type, fill=loc_site, alpha=0.7)) +
-  facet_wrap(~landscape_type) +
+  ggplot(aes(y=rare_obs, x=loc_site, fill=loc_site, alpha=0.7)) +
   geom_violin() +
-  theme_light() +
+  geom_jitter(width=0.1, alpha=0.5) + #add the jittered points
+  theme_half_open() +
   scale_fill_manual(values=c("#A67326", "#F0C907",
                              "#2c7c94", "#a6d0c8")) +
   stat_summary(fun = "mean",
                geom = "crossbar", 
                width = 0.5,
                colour = "black") +
-  geom_jitter(width=0.1, alpha=0.5) +
-  theme(legend.position = "none",
-        strip.text = element_text(size=18, color="black"),
-        strip.background=element_rect(fill="#d3d3d3"),
+  stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
+  stat_compare_means(label.y = 440, size=5) +  # Add global p-value
+  theme(legend.position = "none",       
         axis.title.x = element_blank(),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
         axis.title.y = element_text(size=22),
         axis.text.y = element_text(size=14),
+        axis.text.x = element_text(size=8),
         plot.margin = margin(t = 10, r = 25, b = 0, l = 10, unit = "pt")) +
   labs(y = "Observed Species Richness")
+#to edit the size of the pvalue text
+#https://stackoverflow.com/questions/48550525/ggpubr-change-font-size-of-stat-compare-means-kruskal-wallis-p-values
+library(gginnards)
+obs.plot$layers[[which_layers(obs.plot, "GeomSignif")]]$aes_params$textsize <- 5
+
 
 #plot Shannon
+
+# Perform pairwise comparisons
+compare_means(rare_shan ~ loc_site,  data = rare_alpha.avg)
+# Visualize: Specify the comparisons you want
+my_comparisons <- list( c("Agricultural_Forest", "Undeveloped_Forest"), 
+                        c("Agricultural_Synanthropic", "Undeveloped_Forest"), 
+                        c("Undeveloped_Forest", "Undeveloped_Synanthropic") )
+
+# shan.plot <- rare_alpha.avg %>%
+#   ggplot(aes(y=rare_shan, x=site_type, fill=loc_site, alpha=0.7)) +
+#   facet_wrap(~landscape_type) +
+#   geom_violin() +
+#   theme_light() +
+#     scale_fill_manual(values=c("#A67326", "#F0C907",
+#                                "#2c7c94", "#a6d0c8")) +
+#   stat_summary(fun = "mean",
+#                geom = "crossbar", 
+#                width = 0.5,
+#                colour = "black") +
+#   geom_jitter(width=0.1, alpha=0.5) +
+#     theme(legend.position = "none",
+#           strip.text = element_text(size=18, color="black"),
+#           strip.background=element_rect(fill="#d3d3d3"),
+#           axis.title.x = element_blank(),
+#           axis.text.x = element_blank(),
+#           axis.ticks.x = element_blank(),
+#           axis.title.y = element_text(size=22),
+#           axis.text.y = element_text(size=14),
+#           plot.margin = margin(t = 10, r = 10, b = 0, l = 25, unit = "pt")) +
+#   labs(y = "Shannon Diversity Index")
+
 shan.plot <- rare_alpha.avg %>%
-  ggplot(aes(y=rare_shan, x=site_type, fill=loc_site, alpha=0.7)) +
-  facet_wrap(~landscape_type) +
+  ggplot(aes(y=rare_shan, x=loc_site, fill=loc_site, alpha=0.7)) +
   geom_violin() +
-  theme_light() +
-    scale_fill_manual(values=c("#A67326", "#F0C907",
-                               "#2c7c94", "#a6d0c8")) +
+  geom_jitter(width=0.1, alpha=0.5) + #add the jittered points
+  theme_half_open() +
+  scale_fill_manual(values=c("#A67326", "#F0C907",
+                             "#2c7c94", "#a6d0c8")) +
   stat_summary(fun = "mean",
                geom = "crossbar", 
                width = 0.5,
                colour = "black") +
-  geom_jitter(width=0.1, alpha=0.5) +
-    theme(legend.position = "none",
-          strip.text = element_text(size=18, color="black"),
-          strip.background=element_rect(fill="#d3d3d3"),
-          axis.title.x = element_blank(),
-          axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.title.y = element_text(size=22),
-          axis.text.y = element_text(size=14),
-          plot.margin = margin(t = 10, r = 10, b = 0, l = 25, unit = "pt")) +
+  stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
+  stat_compare_means(label.y = 5.25, size=5) +  # Add global p-value
+  theme(legend.position = "none",       
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=22),
+        axis.text.y = element_text(size=14),
+        axis.text.x = element_text(size=8),
+        plot.margin = margin(t = 10, r = 10, b = 0, l = 25, unit = "pt")) +
   labs(y = "Shannon Diversity Index")
+#to edit the size of the pvalue text
+shan.plot$layers[[which_layers(shan.plot, "GeomSignif")]]$aes_params$textsize <- 5
+
 
 # c("#2c7c94", "#a6d0c8", 
 #   "#c4aa23", "#fbe45b")
@@ -724,59 +811,123 @@ shan.plot <- rare_alpha.avg %>%
 #   "#A67326", "#F0C907")
 
 #plot Simpson
+
+# Perform pairwise comparisons
+compare_means(rare_simp ~ loc_site,  data = rare_alpha.avg)
+# Visualize: Specify the comparisons you want
+my_comparisons <- list( c("Agricultural_Forest", "Undeveloped_Forest"), 
+                        c("Agricultural_Synanthropic", "Undeveloped_Forest"), 
+                        c("Undeveloped_Forest", "Undeveloped_Synanthropic") )
+
+# simp.plot <- rare_alpha.avg %>%
+#   ggplot(aes(y=rare_simp, x=site_type, fill=loc_site, alpha=0.7)) +
+#   facet_wrap(~landscape_type) +
+#   geom_violin() +
+#   theme_light() +
+#   scale_fill_manual(values=c("#A67326", "#F0C907",
+#                              "#2c7c94", "#a6d0c8")) +
+#   stat_summary(fun = "mean",
+#                geom = "crossbar", 
+#                width = 0.5,
+#                colour = "black") +
+#   geom_jitter(width=0.1, alpha=0.5) +
+#   theme(legend.position = "none",
+#         strip.text = element_text(size=18, color="black"),
+#         strip.background=element_rect(fill="#d3d3d3"),
+#         axis.title.x = element_blank(),
+#         axis.title.y = element_text(size=22),
+#         axis.text.y = element_text(size=14),
+#         axis.text.x = element_text(size=18),
+#         plot.margin = margin(t = 25, r = 25, b = 10, l = 10, unit = "pt")) +
+#   labs(y = "Simpson Diversity Index")
+
 simp.plot <- rare_alpha.avg %>%
-  ggplot(aes(y=rare_simp, x=site_type, fill=loc_site, alpha=0.7)) +
-  facet_wrap(~landscape_type) +
+  ggplot(aes(y=rare_simp, x=loc_site, fill=loc_site, alpha=0.7)) +
   geom_violin() +
-  theme_light() +
+  geom_jitter(width=0.1, alpha=0.5) + #add the jittered points
+  theme_half_open() +
   scale_fill_manual(values=c("#A67326", "#F0C907",
                              "#2c7c94", "#a6d0c8")) +
   stat_summary(fun = "mean",
                geom = "crossbar", 
                width = 0.5,
                colour = "black") +
-  geom_jitter(width=0.1, alpha=0.5) +
-  theme(legend.position = "none",
-        strip.text = element_text(size=18, color="black"),
-        strip.background=element_rect(fill="#d3d3d3"),
+  stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
+  stat_compare_means(label.y = 1.25, size=5) +  # Add global p-value
+  theme(legend.position = "none",       
         axis.title.x = element_blank(),
         axis.title.y = element_text(size=22),
         axis.text.y = element_text(size=14),
-        axis.text.x = element_text(size=18),
+        axis.text.x = element_text(size=8),
         plot.margin = margin(t = 25, r = 25, b = 10, l = 10, unit = "pt")) +
   labs(y = "Simpson Diversity Index")
+#to edit the size of the pvalue text
+simp.plot$layers[[which_layers(simp.plot, "GeomSignif")]]$aes_params$textsize <- 5
+
 
 #plot Evennness
+
+# Perform pairwise comparisons
+compare_means(rare_even ~ loc_site,  data = rare_alpha.avg)
+# Visualize: Specify the comparisons you want
+my_comparisons <- list( c("Agricultural_Forest", "Undeveloped_Forest"), 
+                        c("Agricultural_Synanthropic", "Undeveloped_Forest"), 
+                        c("Undeveloped_Forest", "Undeveloped_Synanthropic") )
+
+# even.plot <- rare_alpha.avg %>%
+#   ggplot(aes(y=rare_even, x=site_type, fill=loc_site, alpha=0.7)) +
+#   facet_wrap(~landscape_type) +
+#   geom_violin() +
+#   theme_light() +
+#   scale_fill_manual(values=c("#A67326", "#F0C907",
+#                              "#2c7c94", "#a6d0c8")) +
+#   stat_summary(fun = "mean",
+#                geom = "crossbar", 
+#                width = 0.5,
+#                colour = "black") +
+#   geom_jitter(width=0.1, alpha=0.5) +
+#   theme(legend.position = "none",
+#         strip.text = element_text(size=18, color="black"),
+#         strip.background=element_rect(fill="#d3d3d3"),        
+#         axis.title.x = element_blank(),
+#         axis.title.y = element_text(size=22),
+#         axis.text.y = element_text(size=14),
+#         axis.text.x = element_text(size=18),
+#         plot.margin = margin(t = 25, r = 10, b = 10, l = 25, unit = "pt")) +
+#   labs(y = "Shannon Species Evenness")
+
 even.plot <- rare_alpha.avg %>%
-  ggplot(aes(y=rare_even, x=site_type, fill=loc_site, alpha=0.7)) +
-  facet_wrap(~landscape_type) +
+  ggplot(aes(y=rare_even, x=loc_site, fill=loc_site, alpha=0.7)) +
   geom_violin() +
-  theme_light() +
+  geom_jitter(width=0.1, alpha=0.5) + #add the jittered points
+  theme_half_open() +
   scale_fill_manual(values=c("#A67326", "#F0C907",
                              "#2c7c94", "#a6d0c8")) +
   stat_summary(fun = "mean",
                geom = "crossbar", 
                width = 0.5,
                colour = "black") +
-  geom_jitter(width=0.1, alpha=0.5) +
-  theme(legend.position = "none",
-        strip.text = element_text(size=18, color="black"),
-        strip.background=element_rect(fill="#d3d3d3"),        
+  stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
+  stat_compare_means(label.y = 0.94, size=5) +  # Add global p-value
+  theme(legend.position = "none",       
         axis.title.x = element_blank(),
         axis.title.y = element_text(size=22),
         axis.text.y = element_text(size=14),
-        axis.text.x = element_text(size=18),
+        axis.text.x = element_text(size=8),
         plot.margin = margin(t = 25, r = 10, b = 10, l = 25, unit = "pt")) +
-  labs(y = "Shannon Species Evenness")
+  labs(y = "Shannon Evenness Index")
+#to edit the size of the pvalue text
+even.plot$layers[[which_layers(even.plot, "GeomSignif")]]$aes_params$textsize <- 5
 
 ######### COMPOSITE PLOT (publication-ready using cowplot) ##########
 
 library(cowplot)
 
-png(here("alphadiv_plot.png"), width=1100, height=800)
+png(here("alphadiv_plotv2.png"), width=1100, height=800)
 plot_grid(obs.plot, shan.plot, simp.plot, even.plot, 
           labels = "AUTO",label_size = 28)
 dev.off()
+
 
 # cvdPlot(plot)
 
@@ -785,9 +936,9 @@ dev.off()
 # library(ggbeeswarm)
 # 
 # rare_alpha.avg %>% 
-#   select(Observed, Shannon, Simpson, Evenness, loc_site) %>%
+#   select(rare_obs, rare_shan, rare_simp, rare_Even, loc_site) %>%
 #   pivot_longer(-loc_site, values_to = "est", names_to="stat") %>%
-#   mutate(stat = factor(stat, levels=c("Observed", "Shannon", "Simpson", "Evenness"))) %>%
+#   mutate(stat = factor(stat, levels=c("rare_obs", "rare_shan", "rare_simp", "rare_even"))) %>%
 #   ggplot(aes(x=loc_site, y=est, fill=loc_site)) +
 #   geom_boxplot() +
 #   geom_beeswarm(alpha=0.3) +
