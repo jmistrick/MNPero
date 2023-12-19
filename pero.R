@@ -1166,7 +1166,7 @@ nmds_k3 <- pero_nmds3 %>%
 # dev.off()
 
 
-#cowplot to see k=2 vs 3 vs 4
+#cowplot to see k=2 vs k=3 vs k=4
 png(here("compare_NMDS.png"), width=1800, height = 600)
 plot_grid(nmds_k2, nmds_k3, nmds_k4, ncol = 3, 
           labels = "AUTO", label_size = 36)
@@ -1512,6 +1512,90 @@ ggsave(here("NEWpath_heatmap.eps"),
        plot= last_plot(),
        dpi=300,
        units="px")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+################## new stuff for V2 - Dec 19 2023 ##########################
+
+###### Rarefy count data for pathogen spp detection #######
+##### using vegan:rrarefy() to resample the count numbers #######
+
+
+#do a lil set.seed so I can reproduce these results
+set.seed(2111994)
+
+#initialize a list to store results
+rare_counts.ls <- list()
+
+#for 100 iterations, rarefy count data, save, and repeat
+for(i in 1:10){
+
+  #rarefy data (one iteration)
+  #output in vegan format: taxa are the columns, samples are the rows, sampleIDs are row names
+  rareit_vegan <- rrarefy(abundance_vegan, sample=min_n_seq) #min_n_seq = 74,517
+
+  #save each iteration as an object in a list
+  rare_counts.ls[[i]] <- rareit_vegan
+
+}
+
+#collapse the output list (one list item per iteration) down to a df
+#counts of all taxa for all samples, across 100 iterations
+#really big, n_iterations * 140 samples number of rows
+rare_counts.df <- do.call(rbind, rare_counts.ls) %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var="FDNA") %>% #since there are multiple rows named 'FDNA', the iterations get numbered: 'FDNA.1' etc.
+  separate_wider_delim(FDNA, delim=".", names=c("FDNA", "iteration"),
+                       too_few = "align_start") %>% #needed because not all FDNA columns have a ".#" (fills with NA)
+  mutate(iteration = as.numeric(iteration)) %>% #convert iteration to numeric
+  replace_na(list(iteration=0)) #switch NAs to 0s
+#this df has a column for each taxa and columns for FDNA and iteration
+
+#summarize mean count of each taxa per sample across all iterations
+rare_counts_summary <- rare_counts.df %>% 
+  pivot_longer(-c(FDNA,iteration), names_to="tax", values_to = "count") %>% #long table
+  group_by(FDNA, tax) %>%
+  summarise(rare_count = mean(count),
+            rare_sd = sd(count))
+#output is long format df with FDNA, tax, mean count, and sd of count
+
+#turn it back to a count matrix
+rare_counts_mat <- rare_counts_summary %>% pivot_wider(id_cols=FDNA, values_from="rare_count", names_from="tax") %>%
+  column_to_rownames(var="FDNA") %>% #taxa are columns, FDNA are row names
+  as.matrix()
+
+
+# #save it
+# saveRDS(rare_alpha.df, file="rare_alpha.df_v12.18.2023.RDS")
+# #load it
+# rare_alpha.df <- readRDS(file = "rare_alpha.df_v12.18.2023.RDS") 
+
+
+
+############################################################################
+
+
+
+
+
+
+
+
+
+
+
 
 
 
