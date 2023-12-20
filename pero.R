@@ -1310,227 +1310,17 @@ anosim(abundance_dist, pero_nmds$loc_site)
 # Restore abundance_tax from the rdata file
 #rows are taxa, columns are samples
 abundance_tax <- readRDS(file = "abundance_tax_03.01.23.rds")
-
-##### ABUNDANCE_TAX HAS ALL THE SAMPLES
-
-########### ISSUE HERE: SOME OF THE GENUS FIELDS ARE BLANK, PROBABLY NEED TO FIX / REMOVE THESE ##################
-
-#create abundance table - SPECIES LEVEL
-#rows are taxa, columns are samples, in numerical order
-abundance_tax_spp <- abundance_tax %>%
-  select(!c(taxID, genus, family, class, order, phylum, superkingdom)) %>%
-  pivot_longer(-species, names_to= "FDNA", values_to = "count") %>% 
-  mutate(count = round(count, digits=0)) %>% #round "counts" to nearest whole number
-  pivot_wider(names_from = "FDNA", values_from = "count")
-###MINIMUM COUNT is 10 READS / GENUS
-
-# #to go into vegan, abundance data needs to be a df where taxa are the column, samples are the rows, sampleIDs are row names
-# abundance_path_vegan <- abundance_tax_genus %>% 
-#   column_to_rownames(var="genus") %>%
-#   t() %>%
-#   as.data.frame()
-
-
-############ SUBSET ABUNDANCE (count) table to PATHOGENIC SPECIES ONLY #############
-
-# #bacteria on the PHIbase pathogen list (**PLANT-ONLY PATHOGENS REMOVED 3/22/22**)
-# phi_pathogens <- read.csv(here("PHIbase_pathogen_species_list.csv"), header=TRUE) %>%
-#   separate(species, c("genus", "species"), sep=" ", remove=TRUE) %>%
-#   select(!taxID)
-# # phi_path_genera <- phi_pathogens %>% group_by(genus) %>% slice(1) %>% select(genus)
-# 
-# #bacteria on my list (from internet searches and Annie Jahan's Nanopore farm Pero paper)
-# my_pathogens <- read.csv(here("bacteria_list.csv"), header=TRUE)
-# # my_path_genera <- my_pathogens %>% group_by(genus) %>% slice(1) %>% select(genus)
-# 
-# # #combine PHIbase and my bacteria list (remove redundant genera)
-# # path_genera <- rbind(phi_path_genera, my_path_genera) %>%
-# #   group_by(genus) %>% slice(1)
-# # #pull vector of pathogenic genera
-# # path_genera.v <- path_genera$genus
-# # #save it
-# # saveRDS(path_genera.v, file = here("path_genera.v.rds"))
-# 
-# #combine PHIbase and my list, SPECIES LEVEL
-# path_spp <- rbind(phi_pathogens, my_pathogens) %>% 
-#   arrange(genus, species) %>%
-#   distinct(genus, species, .keep_all = TRUE) %>%
-#   unite(gspp, genus, species, sep=" ", remove=FALSE)
-# write.csv(path_spp, here("Supplementary_Table_S-1_Pathogen_List.csv")) #run on 28 April 2023
-# path_spp.v <- path_spp$gspp
-# 
-# #filter abundance path df (essentially abundance matrix) for pathogen genera
-# abundance_path <- abundance_tax_spp %>%
-#   filter(species %in% path_spp.v) %>%
-#   column_to_rownames(var="species")
-# 
-# # Save abundance_path table to a rdata file
-# saveRDS(abundance_path, file = here("abundance_pathsp_03.22.23.rds"))
-
-# Restore abundance_path from the rdata file
-#rows are taxa, columns are samples
-abundance_path <- readRDS(file = "abundance_pathsp_03.22.23.rds")
-
-
-##########################################################################
-#### right here you could re-insert the 'path_genera_NMDS.R' script   ####
-##########################################################################
-
-# #summarize number of pathogen species per site
-# abundance_path %>%
-#   rownames_to_column(var="species") %>%
-#   pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
-#   mutate(positive = ifelse(count >= 50, 1, 0)) %>%
-#   inner_join(pero_datashort, by="FDNA") %>% #add the metadata
-#   group_by(loc_site, species) %>%
-#   mutate(n_pos = sum(positive),
-#          prev = n_pos / length(FDNA)) %>%
-#   mutate(prev_na = ifelse(prev=="0", NA, prev)) %>%
-#   slice(1) %>%
-#   select(species, loc_site, prev) %>%
-#   filter(prev!=0) %>%
-#   ungroup() %>% summarise(n_distinct(species)) #18 species
-#   group_by(loc_site) %>% summarise(length(species)) #number identified per site
-
-meta <- pero140_datashort %>% select(FDNA, loc_site, ear_tag_number) %>%
-  mutate(ear_tag_number = as.character(ear_tag_number))
-
-data<-abundance_path %>%
-  rownames_to_column(var="species") %>%
-  pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
-  inner_join(meta, by="FDNA") %>%
-  group_by(loc_site, ear_tag_number, species) %>% #combine across FDNA samples per mouse
-  summarize(count = sum(count)) %>% #stop here for summed read count/bacteria/mouse
-  mutate(count = ifelse(count<50, 0, count)) %>% # number reads per pathbac (if over 50 reads)
-  filter(count>0)
-
-hist(x=data$n_read)
-
-data %>% filter(count > 1000)
-
-#mean path per mouse, per loc_site
-abundance_path %>%
-  rownames_to_column(var="species") %>%
-  pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
-  inner_join(meta, by="FDNA") %>%
-  group_by(loc_site, ear_tag_number, species) %>% #combine across FDNA samples per mouse
-  summarize(count = sum(count)) %>% #stop here for summed read count/bacteria/mouse
-  mutate(found = ifelse(count<50, 0, 1)) %>%  #0,1 for pathbac found (if >50 reads)
-  ungroup() %>% group_by(loc_site, ear_tag_number) %>%
-  summarise(n_path = sum(found)) %>% #number pathbac per mouse
-  ungroup() %>% group_by(loc_site) %>%
-  summarise(mean_path = mean(n_path),
-            sd = sd(n_path),
-            min = min(n_path),
-            max = max(n_path)) #mean path per mouse in each loc_site
-
-#top 5 most frequent pathogens
-topfive <- abundance_path %>%
-  rownames_to_column(var="species") %>%
-  pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
-  inner_join(meta, by="FDNA") %>%
-  group_by(loc_site, ear_tag_number, species) %>% #combine across FDNA samples per mouse
-  summarize(count = sum(count)) %>% #stop here for summed read count/bacteria/mouse
-  mutate(found = ifelse(count<50, 0, 1)) %>%
-  ungroup() %>% group_by(species) %>%
-  summarise(n_mice = sum(found)) %>% #number of mice with each pathbac
-  arrange(desc(n_mice)) %>%
-  filter(n_mice > 10) #top 5 pathogens
-  
-topfive$species
-
-#number of mice per pathogen
-abundance_path %>%
-  rownames_to_column(var="species") %>%
-  pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
-  inner_join(meta, by="FDNA") %>%
-  group_by(loc_site, ear_tag_number, species) %>% #combine across FDNA samples per mouse
-  summarize(count = sum(count)) %>% #stop here for summed read count/bacteria/mouse
-  mutate(found = ifelse(count<50, 0, 1)) %>%
-  ungroup() %>% group_by(loc_site, species) %>%
-  summarise(n_mice = sum(found)) %>% #number of mice with pathbac per loc_site
-  filter(species %in% topfive$species) %>%
-  arrange(species, loc_site) %>% 
-  pivot_wider(id_cols=species, names_from = loc_site, values_from = n_mice) %>%
-  mutate(total = rowSums(across(where(is.numeric)))) %>%
-  arrange(desc(total)) %>%
-  kbl(col.names = c("Bacteria Species", 
-                    "A-F", "A-S", 
-                    "U-F", "U-S",
-                    "Total")) %>%
-  kable_styling(full_width=FALSE) %>%
-  row_spec(0, bold=T, color="black", background="#DAD7D7")
-
-
-
-
-################################################################################
-#### right here you could re-insert the 'pathogen_prev_heatmaps.R' script   ####
-################################################################################
-
-facet_labs <- as_labeller(c("Agricultural_Forest" = "Agricultural-Forest", 
-                            "Agricultural_Synanthropic" = "Agricultural-Synanthropic",
-                            "Undeveloped_Forest" = "Undeveloped-Forest", 
-                            "Undeveloped_Synanthropic" = "Undeveloped-Synanthropic"))
-
-meta <- pero140_datashort %>% select(FDNA, loc_site, ear_tag_number) %>%
-  mutate(ear_tag_number = as.character(ear_tag_number))
-
-library(wesanderson)
-wes_pal <- wes_palette("Zissou1", type="continuous") #color palette for gradient
-
-abundance_path %>%
-  rownames_to_column(var="species") %>%
-  pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
-  mutate(count = ifelse(count<50, 0, count)) %>%  #change counts 0-50 to 0
-  # group_by(species) %>%  mutate(found = sum(count)) %>% filter(found > 0) %>% select(!found) %>% #remove species with no >50 readcounts
-  # ungroup() %>% mutate(count = ifelse(count<50, 0, count)) %>% #change the 0's (for found spp) back to NA
-  inner_join(meta, by="FDNA") %>% #add the metadata
-  select(!FDNA) %>% #drop FDNA column, we'll go off ear_tag so we group together data from recaps
-  ggplot(aes(x=ear_tag_number, y=species)) +
-  facet_grid(. ~ loc_site, 
-             scales="free_x", space="free",
-             labeller=facet_labs) +
-  geom_tile(aes(fill=log(count))) +
-  scale_fill_gradientn(colors = wes_pal, na.value="#f5f5f5", 
-                       name="Ln(Read Count)") +
-  scale_y_discrete(limits=rev) + #flip the y axis to be alphabetical top to bottom
-  theme_light() +
-  theme(axis.text.y = element_text(size=12),
-        axis.title = element_blank(),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        legend.title = element_text(size=12),
-        legend.text= element_text(size=12),
-        legend.position = "right",
-        strip.text = element_text(size=12, color="black"),
-        strip.background=element_rect(fill="#d3d3d3"),
-        panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank())
-
-ggsave(here("NEWpath_heatmap.eps"),
-       plot= last_plot(),
-       dpi=300,
-       units="px")
-
-
-
-
-
-
-
-
-
-
-
+##### ABUNDANCE_TAX HAS ALL 160 SAMPLES, their Emu estimated abundance and the taxonomic info for each taxID
+##### potential ISSUE: some of the genus field are blank (n=28), they're still in, but maybe remove?
 
 
 
 
 ################## new stuff for V2 - Dec 19 2023 ##########################
 
-###### Rarefy count data for pathogen spp detection #######
+###### Rarefy Emu count data for pathogen spp detection #######
 ##### using vegan:rrarefy() to resample the count numbers #######
+##### this is using the 140 data - NO DUPLICATES of recaps ######
 
 # #commented out on 12.19.2023 once I ran it
 # #do a lil set.seed so I can reproduce these results
@@ -1543,6 +1333,9 @@ ggsave(here("NEWpath_heatmap.eps"),
 # for(i in 1:100){
 # 
 #   #rarefy data (one iteration)
+#   #running this on abundance_vegan which is the OG abundance140 file 
+#     #(same count values as abundance_tax but that has all 160 samples...
+#     # and the extra taxonomic info which we don't need yet)
 #   #output in vegan format: taxa are the columns, samples are the rows, sampleIDs are row names
 #   rareit_vegan <- rrarefy(abundance_vegan, sample=min_n_seq) #min_n_seq = 74,517
 # 
@@ -1580,10 +1373,314 @@ ggsave(here("NEWpath_heatmap.eps"),
 # saveRDS(rare_counts_mat, file="rare_counts_mat_v12.19.2023.RDS")
 #load it
 rare_counts_mat <- readRDS(file = "rare_counts_mat_v12.19.2023.RDS")
-
 ###### this is now a rarefied count matrix (100 iterations) of the 140 to be used for pathogen detection
 
-############################################################################
+#pull tax ID and taxonomic info for all the observed bacteria (from abundance_tax file, which has 160 samples)
+taxID_spp <- abundance_tax %>% select(taxID, species)
+
+#join rare_counts_mat with taxID_spp 
+#rarefied abundance table - SPECIES LEVEL
+#rows are taxa, columns are samples, in numerical order
+### ONLY includes the 140 unique mice - NO DUPLICATES for recaps
+abundance_spp <- rare_counts_mat %>% t() %>% #transpose so tax are rows
+  as.data.frame() %>% rownames_to_column(var="taxID") %>%
+  left_join(taxID_spp, by="taxID") %>%
+  relocate(species, .after=taxID) %>% select(-taxID) 
+#this could be added back in if count needs to be an integer (currently and avg so has decimals)
+  # pivot_longer(-species, names_to= "FDNA", values_to = "count") %>%
+  # mutate(count = round(count, digits=0)) %>% #round "counts" to nearest whole number
+  # pivot_wider(names_from = "FDNA", values_from = "count")
+
+###abundance_spp is the 140 and their avg rarefied counts for all species
+    ###df with columns species, and then one column for each FDNA, values are counts
+    ###minimum count could be below 10 reads/genus
+
+
+
+
+############ SUBSET ABUNDANCE (count) table to PATHOGENIC SPECIES ONLY #############
+
+# #CODE RUN and COMMENTED OUT on 20 December 2023
+# #bacteria on the PHIbase pathogen list (**PLANT-ONLY PATHOGENS REMOVED 3/22/22**)
+# phi_pathogens <- read.csv(here("PHIbase_pathogen_species_list.csv"), header=TRUE) %>%
+#   separate_wider_delim(species, names=c("genus", "species"), delim=" ",
+#                        too_many = "merge") %>%
+#   select(!taxID)
+# # phi_path_genera <- phi_pathogens %>% group_by(genus) %>% slice(1) %>% select(genus)
+# 
+# #bacteria on my list (from internet searches and Annie Jahan's Nanopore farm Pero paper)
+# my_pathogens <- read.csv(here("bacteria_list.csv"), header=TRUE)
+# # my_path_genera <- my_pathogens %>% group_by(genus) %>% slice(1) %>% select(genus)
+# 
+# # #combine PHIbase and my bacteria list, GENUS LEVEL (remove redundant genera)
+# # path_genera <- rbind(phi_path_genera, my_path_genera) %>%
+# #   group_by(genus) %>% slice(1)
+# # #pull vector of pathogenic genera
+# # path_genera.v <- path_genera$genus
+# # #save it
+# # saveRDS(path_genera.v, file = here("path_genera.v.rds"))
+# 
+# #combine PHIbase and my list, SPECIES LEVEL
+# path_spp <- rbind(phi_pathogens, my_pathogens) %>%
+#   arrange(genus, species) %>%
+#   distinct(genus, species, .keep_all = TRUE) %>%
+#   unite(gspp, genus, species, sep=" ", remove=FALSE)
+# write.csv(path_spp, here("Supplementary_Table_S-1_Pathogen_List_v2.csv")) #run on 20 Dec 2023
+# path_spp.v <- path_spp$gspp
+# 
+# #filter abundance path df (essentially abundance matrix) for pathogen genera
+# abundance_path <- abundance_spp %>%
+#   filter(species %in% path_spp.v) %>%
+#   column_to_rownames(var="species")
+# 
+# # Save abundance_path table to a rdata file
+# saveRDS(abundance_path, file = here("abundance_pathsp_12.20.23.rds"))
+
+# Restore abundance_path from the rdata file
+#rows are taxa, columns are samples
+abundance_path <- readRDS(file = "abundance_pathsp_12.20.23.rds") #has 39 species just like non-rarefied 160 analysis
+
+
+##########################################################################
+#### right here you could re-insert the 'path_genera_NMDS.R' script   ####
+##########################################################################
+
+# #summarize number of pathogen species per site
+# abundance_path %>%
+#   rownames_to_column(var="species") %>%
+#   pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
+#   mutate(positive = ifelse(count >= 50, 1, 0)) %>%
+#   inner_join(pero_datashort, by="FDNA") %>% #add the metadata
+#   group_by(loc_site, species) %>%
+#   mutate(n_pos = sum(positive),
+#          prev = n_pos / length(FDNA)) %>%
+#   mutate(prev_na = ifelse(prev=="0", NA, prev)) %>%
+#   slice(1) %>%
+#   select(species, loc_site, prev) %>%
+#   filter(prev!=0) %>%
+#   ungroup() %>% summarise(n_distinct(species)) #18 species
+#   group_by(loc_site) %>% summarise(length(species)) #number identified per site
+
+
+
+#number of reads per mouse
+#number of species per mouse
+data <- abundance_path %>%
+  rownames_to_column(var="species") %>%
+  pivot_longer(-species, names_to = "FDNA", values_to = "n_reads") %>%
+  mutate(n_reads = ifelse(n_reads<50, 0, n_reads)) %>%  #change counts 0-50 to 0
+  filter(n_reads>0) %>%
+  group_by(FDNA) %>% mutate(n_path = n_distinct(species)) %>% ungroup() %>%
+  left_join(pero140_datashort, by="FDNA")
+
+n_distinct(data$FDNA) #41 animals had putative pathogens
+41/140 #about 29% -- tbh, that's pretty interesting
+
+# Perform pairwise comparisons
+compare_means(n_path ~ loc_site,  data = data)
+# Visualize: Specify the comparisons you want
+my_comparisons <- list( c("Agricultural_Forest", "Undeveloped_Forest"), 
+                        c("Agricultural_Synanthropic", "Undeveloped_Forest"), 
+                        c("Undeveloped_Forest", "Undeveloped_Synanthropic") )
+
+#plot n pathogens per mouse compare by loc_site -- there's nothing
+data %>%
+  ggplot(aes(y=n_path, x=loc_site, fill=loc_site, alpha=0.7)) +
+  geom_violin() +
+  geom_jitter(width=0.1, height=0.1, alpha=0.5) + #add the jittered points
+  theme_half_open() +
+  scale_fill_manual(values=c("#A67326", "#F0C907",
+                             "#2c7c94", "#a6d0c8")) +
+  stat_summary(fun = "mean",
+               geom = "crossbar", 
+               width = 0.5,
+               colour = "black") +
+  # stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
+  stat_compare_means(label.y = 1.8, size=5)  # Add global p-value
+
+####### ermagerd merdeling ########
+path_miceIDS <- unique(data$FDNA)
+
+npathmouse <- data %>% group_by(FDNA) %>% slice(1) %>% select(FDNA, n_path) %>%
+  mutate(n_path = ifelse(is.na(n_path), 0, n_path))
+
+glmdata <- pero140_datashort %>% 
+  mutate(pathfound = ifelse(FDNA %in% path_miceIDS, 1, 0)) %>% #add column for whether mouse had pathbac
+  left_join(npathmouse, by="FDNA") %>%
+  mutate(landscape_type = factor(landscape_type, levels=c("Undeveloped", "Agricultural")))
+  
+#what predicts probability of finding a putative pathogen?
+#https://stats.stackexchange.com/questions/561263/poisson-or-binomial-distribution-for-modeling
+mod <- glm(pathfound ~ landscape_type + site_type + landscape_type*site_type, 
+           family=binomial(link="logit"), data=glmdata)
+summary(mod)
+plot(mod)
+
+#odds ratio (CI shouldn't cross 1: (0-1) means less likely, (1+) means more likely)
+exp(cbind(coef(mod), confint(mod)))
+
+#model diagnostics
+#https://rpubs.com/benhorvath/glm_diagnostics
+
+library(statmod)
+plot(density(qresid(mod)))
+#residuals vs fitted
+scatter.smooth(predict(mod, type='response'), rstandard(mod, type='deviance'), col='gray')
+#quartile residuals
+scatter.smooth(predict(mod, type='response'), qresid(mod), col='gray')
+
+scatter.smooth(predict(mod, type='response'), glmdata$landscape_type, col='hotpink')
+scatter.smooth(predict(mod, type='response'), glmdata$site_type, col='hotpink')
+
+qqnorm(qresid(mod)); qqline(qresid(mod))
+
+
+  
+  # group_by(loc_site) %>%
+  # summarise(npath = sum(pathfound),
+  #           ntotal = length(FDNA),
+  #           ppn = npath/ntotal)
+
+
+#n species per loc_site
+abundance_path %>%
+  rownames_to_column(var="species") %>%
+  pivot_longer(-species, names_to = "FDNA", values_to = "n_reads") %>%
+  mutate(n_reads = ifelse(n_reads<50, 0, n_reads)) %>%  #change counts 0-50 to 0
+  filter(n_reads>0) %>%
+  left_join(pero140_datashort, by="FDNA") %>%
+  group_by(loc_site) %>%
+  summarise(rich = n_distinct(species))
+#9 pathogens in agforest, 5-6 in others
+
+#total n pathogens per loc_site (basically counting the number of rows)
+abundance_path %>%
+  rownames_to_column(var="species") %>%
+  pivot_longer(-species, names_to = "FDNA", values_to = "n_reads") %>%
+  mutate(n_reads = ifelse(n_reads<50, 0, n_reads)) %>%  #change counts 0-50 to 0
+  filter(n_reads>0) %>%
+  left_join(pero140_datashort, by="FDNA") %>%
+  group_by(loc_site) %>%
+  summarise(sum = length(FDNA))
+#22 and 17 total positives in ag -- 7 and 7 positives in undev
+# but I can't fucking do anything stats on this. :| why do i bother?
+
+
+
+
+
+### rework this with rarefied data
+# #reads per mouse, filtered to >50 reads
+# test <- abundance_path %>%
+#   rownames_to_column(var="species") %>%
+#   pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
+#   #NO LONGER NEEDED - because only have one entry per mouse - NO DUPLICATES from recaps
+#   # group_by(loc_site, ear_tag_number, species) %>% #combine across FDNA samples per mouse
+#   # summarize(count = sum(count)) %>% #stop here for summed read count/bacteria/mouse
+#   mutate(read_count = ifelse(count<50, 0, count)) %>% # number reads per pathbac (if over 50 reads)
+#   filter(read_count>0) %>% arrange(FDNA)
+#   left_join(pero140_datashort, by="FDNA") 
+# #count of avg rarefied reads per pathogen species in mice that had reads (ie zeros removed)
+
+# ## rework this with rarefied data
+# #mean path per mouse, per loc_site
+# abundance_path %>%
+#   rownames_to_column(var="species") %>%
+#   pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
+#   mutate(present = ifelse(count<50, 0, 1)) %>% #0,1 for pathbac found (if >50 reads)
+#   left_join(pero140_datashort, by="FDNA") %>%
+#   group_by(loc_site, FDNA) %>% summarise(n_path = sum(present)) %>% #number pathbac per mouse
+#   ungroup() %>% group_by(loc_site) %>%
+#   summarise(mean_path = mean(n_path),
+#             sd = sd(n_path),
+#             min = min(n_path),
+#             max = max(n_path)) #mean path per mouse in each loc_site
+
+## needs to be updated, not the top 5 anymore since rarefying
+# #top 5 most frequent pathogens
+# topfive <- abundance_path %>%
+#   rownames_to_column(var="species") %>%
+#   pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
+#   left_join(pero140_datashort, by="FDNA") %>%
+#   # group_by(loc_site, ear_tag_number, species) %>% #combine across FDNA samples per mouse
+#   # summarize(count = sum(count)) %>% #stop here for summed read count/bacteria/mouse
+#   mutate(found = ifelse(count<50, 0, 1)) %>%
+#   ungroup() %>% group_by(species) %>%
+#   summarise(n_mice = sum(found)) %>% #number of mice with each pathbac
+#   arrange(desc(n_mice)) %>%
+#   filter(n_mice > 0)
+#   
+# topfive$species
+
+### NEEDS TO BE UPDATED
+# #number of mice per pathogen
+# abundance_path %>%
+#   rownames_to_column(var="species") %>%
+#   pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
+#   inner_join(meta, by="FDNA") %>%
+#   group_by(loc_site, ear_tag_number, species) %>% #combine across FDNA samples per mouse
+#   summarize(count = sum(count)) %>% #stop here for summed read count/bacteria/mouse
+#   mutate(found = ifelse(count<50, 0, 1)) %>%
+#   ungroup() %>% group_by(loc_site, species) %>%
+#   summarise(n_mice = sum(found)) %>% #number of mice with pathbac per loc_site
+#   filter(species %in% topfive$species) %>%
+#   arrange(species, loc_site) %>% 
+#   pivot_wider(id_cols=species, names_from = loc_site, values_from = n_mice) %>%
+#   mutate(total = rowSums(across(where(is.numeric)))) %>%
+#   arrange(desc(total)) %>%
+#   kbl(col.names = c("Bacteria Species", 
+#                     "A-F", "A-S", 
+#                     "U-F", "U-S",
+#                     "Total")) %>%
+#   kable_styling(full_width=FALSE) %>%
+#   row_spec(0, bold=T, color="black", background="#DAD7D7")
+
+
+################################################################################
+#### right here you could re-insert the 'pathogen_prev_heatmaps.R' script   ####
+################################################################################
+
+facet_labs <- as_labeller(c("Agricultural_Forest" = "Agricultural-Forest", 
+                            "Agricultural_Synanthropic" = "Agricultural-Synanthropic",
+                            "Undeveloped_Forest" = "Undeveloped-Forest", 
+                            "Undeveloped_Synanthropic" = "Undeveloped-Synanthropic"))
+
+library(wesanderson)
+wes_pal <- wes_palette("Zissou1", type="continuous") #color palette for gradient
+
+abundance_path %>%
+  rownames_to_column(var="species") %>%
+  pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
+  mutate(count = ifelse(count<50, 0, count)) %>%  #change counts 0-50 to 0
+  group_by(species) %>%  mutate(found = sum(count)) %>% filter(found > 0) %>% select(!found) %>% #remove species with no >50 readcounts
+  ungroup() %>%
+  left_join(pero140_datashort, by="FDNA") %>% #add the metadata
+  # select(!FDNA) %>% #drop FDNA column, we'll go off ear_tag so we group together data from recaps
+  ggplot(aes(x=FDNA, y=species)) +
+  facet_grid(. ~ loc_site, 
+             scales="free_x", space="free",
+             labeller=facet_labs) +
+  geom_tile(aes(fill=log(count))) +
+  scale_fill_gradientn(colors = wes_pal, na.value="#f5f5f5", 
+                       name="Ln(Read Count)") +
+  scale_y_discrete(limits=rev) + #flip the y axis to be alphabetical top to bottom
+  theme_light() +
+  theme(axis.text.y = element_text(size=12),
+        axis.title = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.title = element_text(size=12),
+        legend.text= element_text(size=12),
+        legend.position = "right",
+        strip.text = element_text(size=12, color="black"),
+        strip.background=element_rect(fill="#d3d3d3"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+ggsave(here("path_heatmap_v2.eps"),
+       plot= last_plot(),
+       dpi=300,
+       units="px")
 
 
 
@@ -1592,6 +1689,24 @@ rare_counts_mat <- readRDS(file = "rare_counts_mat_v12.19.2023.RDS")
 
 
 
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+  
+  
 
 
 
