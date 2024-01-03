@@ -1727,6 +1727,7 @@ tax_mat <- abundance_tax %>% #140 samples worth of taxIDs
 otu_mat <- abundance_tax %>%
   select(!c("species", "genus", "family", "order", "class", "phylum", "superkingdom")) %>%
   pivot_longer(-taxID, names_to = "FDNA", values_to = "count") %>%
+  mutate(count = ifelse(count>50, count, 0)) %>%
   filter(!FDNA %in% removeFDNAs.v) %>% #remove recapture animals (get to n=140)
   pivot_wider(id_cols="taxID", names_from = "FDNA", values_from = "count") %>%
   column_to_rownames(var="taxID") %>%
@@ -1734,6 +1735,8 @@ otu_mat <- abundance_tax %>%
 
 #convert metadata to phyloseq-usable format (FDNA as row name)
 pero_datashort_mat <- pero140_datashort %>% 
+  mutate(loc_site = fct_relevel(loc_site, c("Undeveloped_Forest", "Undeveloped_Synanthropic",
+                                       "Agricultural_Forest", "Agricultural_Synanthropic"))) %>%
   column_to_rownames(var="FDNA")
 
 
@@ -1742,45 +1745,134 @@ OTU = otu_table(otu_mat, taxa_are_rows = TRUE)
 TAX = tax_table(tax_mat)
 samples = sample_data(pero_datashort_mat)
 
+
 #combine into a single phyloseq object
 abundance_phylo <- phyloseq(OTU, TAX, samples)
 # abundance_phylo
 
 
+# #agglomerate by genus
+# abund_phylo_genus <- tax_glom(abundance_phylo, taxrank = "genus")
+# taxID_genus <- abund_phylo_genus@tax_table %>% as.data.frame() %>% rownames_to_column(var="taxID") %>% select(taxID, genus)
+
 ######### ANCOM-BC ##########
 
 #https://github.com/FrederickHuangLin/ANCOMBC
 #https://rdrr.io/github/FrederickHuangLin/ANCOMBC/man/ancombc.html
-BiocManager::install("ANCOMBC")
+# BiocManager::install("ANCOMBC") 
+library(ANCOMBC)
 
 set.seed(2111994)
 
-out = ancombc(
-  phyloseq = abundance_phylo, 
-  tax_level = "species",
-  formula = "landscape_type + site_type + loc_site", 
-  p_adj_method = "fdr", 
-  zero_cut = 0.90, # by default prevalence filter of 10% is applied
-  lib_cut = 0, 
-  group = "loc_site", 
-  struc_zero = TRUE, 
-  neg_lb = TRUE, 
-  tol = 1e-5, 
-  max_iter = 100, 
-  conserve = TRUE, 
-  alpha = 0.05, 
-  global = TRUE
-)
-res <- out$res
+#all the parameters
+#https://rdrr.io/github/FrederickHuangLin/ANCOMBC/man/ancombc.html
 
+out <- ancombc(
+  phyloseq = abundance_phylo, 
+  formula = "loc_site", 
+  p_adj_method = "holm", 
+  zero_cut = 0.90, #default
+  lib_cut = 0, #default, do not discard any samples
+  group = "loc_site", #character
+  struc_zero = TRUE, 
+  neg_lb = TRUE, #set to TRUE if n per group > 30
+  tol = 1e-5, #default
+  max_iter = 100, #default
+  conserve = TRUE, 
+  alpha = 0.05, #default
+  global = TRUE 
+)
+
+# out <- ancombc(
+#   phyloseq = abund_phylo_genus, 
+#   formula = "loc_site", 
+#   p_adj_method = "holm", 
+#   zero_cut = 0.90, #default
+#   lib_cut = 0, #default, do not discard any samples
+#   group = "loc_site", #character
+#   struc_zero = TRUE, 
+#   neg_lb = TRUE, #set to TRUE if n per group > 30
+#   tol = 1e-5, #default
+#   max_iter = 100, #default
+#   conserve = TRUE, 
+#   alpha = 0.05, #default
+#   global = TRUE 
+# )
+
+res <- out$res
+res_global <- out$res_global %>% #pull global comparisons
+  rownames_to_column(var="taxID") %>% #taxID is rowname, move to column
+  left_join(taxID_spp, by="taxID") #join species names by taxID
+
+# res_global <- out$res_global %>% #pull global comparisons
+#   rownames_to_column(var="taxID") %>% #taxID is rowname, move to column
+#   left_join(taxID_genus, by="taxID") #join species names by taxID
 
 ##########################################################################
 
+#recall the list of 209 pathogenic species
+path_spp <- read.csv(here("Supplementary_Table_S-1_Pathogen_List_v2.csv")) #run on 20 Dec 2023
+path_spp.v <- path_spp$gspp
+
+#1.3.24!! trying code from the vignette
+#https://www.bioconductor.org/packages/release/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC.html
+
+#vector of species with significant differences
+sig_taxa <- res_global %>% filter(diff_abn == TRUE) %>% .$species
+
+# sig_taxa <- res_global %>% filter(diff_abn == TRUE) %>% .$genus
+
+
+tab_beta <- res$beta %>% rownames_to_column(var="taxID") %>% left_join(taxID_spp, by="taxID")
+
+# tab_beta <- res$beta %>% rownames_to_column(var="taxID") %>% left_join(taxID_genus, by="taxID")
+
+
+df_locsite <- tab_beta %>% select(-taxID) %>%
+  filter(species %in% sig_taxa) %>% #only keep the significantly different taxa
+  # filter(species %in% path_spp.v) %>%
+  rename("A-S" = "loc_siteAgricultural_Synanthropic",
+         "A-F" = "loc_siteAgricultural_Forest",
+         "U-S" = "loc_siteUndeveloped_Synanthropic")
+
+df_heat = df_locsite %>%
+  pivot_longer(cols = -one_of("species"),
+               names_to = "loc_site", values_to = "value") %>%
+  mutate(value = round(value, 2))
+df_heat$species = factor(df_heat$species, levels = sort(sig_taxa))
+
+lo = floor(min(df_heat$value))
+up = ceiling(max(df_heat$value))
+mid = (lo + up)/2
+p_heat = df_heat %>%
+  ggplot(aes(x = loc_site, y = species, fill = value)) + 
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       na.value = "white", midpoint = mid, limit = c(lo, up),
+                       name = NULL) +
+  geom_text(aes(loc_site, species, label = value), color = "black", size = 4) +
+  labs(x = NULL, y = NULL, 
+       title = "?BETA? for globally significant (putative pathogen species)") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+p_heat
 
 
 
-
-  
+#alternatively
+#https://www.nicholas-ollberding.com/post/introduction-to-the-statistical-analysis-of-microbiome-data-in-r/
+#boxplots to compare abundance (threshold to at least 50 reads) of pathogen species
+  #across loc_sites
+abundance_spp %>% pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
+  filter(count>50) %>%
+  filter(species %in% path_spp.v) %>% 
+  left_join(tag_loc, by="FDNA") %>%
+  unite(loc_site, landscape_type, site_type) %>%
+ggplot(aes(x = loc_site, y = count)) +
+  geom_boxplot(outlier.shape  = NA) +
+  geom_jitter(aes(color = species), height = 0, width = .2) +
+  labs(x = "", y = "Abundance\n") +
+  facet_wrap(~ species, scales = "free")
   
   
 
