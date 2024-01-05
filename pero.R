@@ -12,7 +12,7 @@ library(phyloseq)
 library(here)
 library(janitor)
 library(lubridate)
-library(kableExtra)
+# library(kableExtra)
 library(ggtext) #to add stress value
 # library(RColorBrewer)
 # library(colorBlindness)
@@ -1723,7 +1723,21 @@ tax_mat <- abundance_tax %>% #140 samples worth of taxIDs
   select("superkingdom", "phylum", "class", "order", "family", "genus", "species") %>% #reorder tax to be descending L to R
   as.matrix()
 
-#convert abundance to matrix, taxID as rowname
+# #convert RAREFIED abundance to matrix, taxID as rowname
+# otu_mat2 <- rare_counts_mat %>% #rarefied abundance counts for the 140
+#   as.data.frame() %>%
+#   rownames_to_column(var="FDNA") %>%
+#   pivot_longer(-FDNA, names_to = "taxID", values_to = "count") %>%
+#   mutate(count = ifelse(count>50, count, 0)) %>% #remove species with <50 reads
+#   pivot_wider(id_cols="taxID", names_from = "FDNA", values_from = "count") %>%
+#   column_to_rownames(var="taxID") %>%
+#   as.matrix()
+
+#don't rarefy abundance data before ANCOM, prefilter out low abundance
+# https://forum.qiime2.org/t/do-ancom-and-lefse-always-require-rarefaction-at-specific-sequencing-depth-feature-counts/18804/3
+
+#convert RAW abundance to matrix, taxID as rowname
+#RAW (not rarefied) abundance counts - but counts <50 removed
 otu_mat <- abundance_tax %>%
   select(!c("species", "genus", "family", "order", "class", "phylum", "superkingdom")) %>%
   pivot_longer(-taxID, names_to = "FDNA", values_to = "count") %>%
@@ -1756,38 +1770,70 @@ abundance_phylo <- phyloseq(OTU, TAX, samples)
 # taxID_genus <- abund_phylo_genus@tax_table %>% as.data.frame() %>% rownames_to_column(var="taxID") %>% select(taxID, genus)
 
 ######### ANCOM-BC ##########
+#general intro to differential abundance 
+  #https://microbiome.github.io/OMA/differential-abundance.html
 
-#https://github.com/FrederickHuangLin/ANCOMBC
-#https://rdrr.io/github/FrederickHuangLin/ANCOMBC/man/ancombc.html
-# BiocManager::install("ANCOMBC") 
+#the ANCOMBC package for R version 4.1
+  #https://rdrr.io/bioc/ANCOMBC/man/ancombc.html
+
+#maybe relevant question about not having a reference group
+  #https://github.com/FrederickHuangLin/ANCOMBC/issues/56
+
+
+#this is documentation for the most recent (Jan 2 2024) version of the package (R versions 4.3)
+  #https://bioconductor.org/packages/release/bioc/manuals/ANCOMBC/man/ANCOMBC.pdf
+#also the Jan 2024 update:
+  #https://rdrr.io/github/FrederickHuangLin/ANCOMBC/man/ancombc.html
+
+#GitHub page
+  #https://github.com/FrederickHuangLin/ANCOMBC
+
+
+
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+# BiocManager::install("ANCOMBC")
 library(ANCOMBC)
 
 set.seed(2111994)
 
-#all the parameters
-#https://rdrr.io/github/FrederickHuangLin/ANCOMBC/man/ancombc.html
+#ancom-bc2 for multiple pairwise comparisons
+output <- ancombc2(data = abundance_phylo, 
+                   tax_level = "species",
+                   fix_formula = "loc_site + sex + reproductive", 
+                   rand_formula = NULL, #no random effects
+                   p_adj_method = "holm", #default
+                   pseudo_sens = TRUE, #default
+                   prv_cut = 0.10, #discard taxon with low prevalence (0.1=default)
+                   lib_cut = 0, #do not discard any samples
+                   s0_perc = 0.05, #default
+                   group = "loc_site", 
+                   struc_zero = TRUE, neg_lb = TRUE,
+                   alpha = 0.05, 
+                   n_cl = 2, #run 2 nodes in parallel (faster computing)
+                   verbose = TRUE,
+                   global = TRUE, #perform global test
+                   pairwise = TRUE, #pairwise directional test
+                   dunnet = TRUE, #Dunnett's type of test, even more conservative
+                   trend = FALSE, #trend test
+                   iter_control = list(tol = 1e-2, max_iter = 20,
+                                      verbose = FALSE), #default
+                   em_control = list(tol = 1e-5, max_iter = 100), #default
+                   lme_control = NULL, #not using a mixed model
+                   mdfdr_control = list(fwer_ctrl_method = "holm", B = 100), #default
+                   trend_control = NULL) #no trend test
 
-out <- ancombc(
-  phyloseq = abundance_phylo, 
-  formula = "loc_site", 
-  p_adj_method = "holm", 
-  zero_cut = 0.90, #default
-  lib_cut = 0, #default, do not discard any samples
-  group = "loc_site", #character
-  struc_zero = TRUE, 
-  neg_lb = TRUE, #set to TRUE if n per group > 30
-  tol = 1e-5, #default
-  max_iter = 100, #default
-  conserve = TRUE, 
-  alpha = 0.05, #default
-  global = TRUE 
-)
+res = output$res[,1:5] %>% rename(species=taxon)
+# res_pair = output$res_pair
+res_global = output$res_global %>%
+  rename(taxID = taxon)
+
 
 # out <- ancombc(
-#   phyloseq = abund_phylo_genus, 
-#   formula = "loc_site", 
+#   data = abundance_phylo, 
+#   formula = "loc_site + sex + reproductive", 
 #   p_adj_method = "holm", 
-#   zero_cut = 0.90, #default
+#   prv_cut = 0.1 , #default
 #   lib_cut = 0, #default, do not discard any samples
 #   group = "loc_site", #character
 #   struc_zero = TRUE, 
@@ -1798,15 +1844,11 @@ out <- ancombc(
 #   alpha = 0.05, #default
 #   global = TRUE 
 # )
-
-res <- out$res
-res_global <- out$res_global %>% #pull global comparisons
-  rownames_to_column(var="taxID") %>% #taxID is rowname, move to column
-  left_join(taxID_spp, by="taxID") #join species names by taxID
-
+# 
+# res <- out$res
 # res_global <- out$res_global %>% #pull global comparisons
-#   rownames_to_column(var="taxID") %>% #taxID is rowname, move to column
-#   left_join(taxID_genus, by="taxID") #join species names by taxID
+#   rename(taxID = taxon) %>%
+#   left_join(taxID_spp, by="taxID") #join species names by taxID
 
 ##########################################################################
 
@@ -1814,26 +1856,21 @@ res_global <- out$res_global %>% #pull global comparisons
 path_spp <- read.csv(here("Supplementary_Table_S-1_Pathogen_List_v2.csv")) #run on 20 Dec 2023
 path_spp.v <- path_spp$gspp
 
-#1.3.24!! trying code from the vignette
+#1.3.24!! trying code from the tutorial (Oct 24, 2023)
 #https://www.bioconductor.org/packages/release/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC.html
 
 #vector of species with significant differences
-sig_taxa <- res_global %>% filter(diff_abn == TRUE) %>% .$species
+sig_taxa <- res_global %>% filter(diff_abn == TRUE) %>% .$taxID
 
-# sig_taxa <- res_global %>% filter(diff_abn == TRUE) %>% .$genus
-
-
-tab_beta <- res$beta %>% rownames_to_column(var="taxID") %>% left_join(taxID_spp, by="taxID")
-
-# tab_beta <- res$beta %>% rownames_to_column(var="taxID") %>% left_join(taxID_genus, by="taxID")
+# tab_lfc <- res$lfc %>% rename(taxID = taxon) %>% left_join(taxID_spp, by="taxID")
 
 
-df_locsite <- tab_beta %>% select(-taxID) %>%
+df_locsite <- res %>% select(-"lfc_(Intercept)") %>%
   filter(species %in% sig_taxa) %>% #only keep the significantly different taxa
   # filter(species %in% path_spp.v) %>%
-  rename("A-S" = "loc_siteAgricultural_Synanthropic",
-         "A-F" = "loc_siteAgricultural_Forest",
-         "U-S" = "loc_siteUndeveloped_Synanthropic")
+  rename("A-S" = "lfc_loc_siteAgricultural_Synanthropic",
+         "A-F" = "lfc_loc_siteAgricultural_Forest",
+         "U-S" = "lfc_loc_siteUndeveloped_Synanthropic")
 
 df_heat = df_locsite %>%
   pivot_longer(cols = -one_of("species"),
