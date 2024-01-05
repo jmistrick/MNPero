@@ -1,18 +1,13 @@
-#install phyloseq, DESeq2
+#install phyloseq, ANCOMBC
 # if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
 # BiocManager::install("phyloseq")
-# BiocManager::install("DESeq2")
+# BiocManager::install("ANCOMBC")
 
 library(vegan)
 library(phyloseq)
-# library(DESeq2)
-# library(FSA) Dunn test
-# library(rstatix)
-
 library(here)
 library(janitor)
 library(lubridate)
-# library(kableExtra)
 library(ggtext) #to add stress value
 # library(RColorBrewer)
 # library(colorBlindness)
@@ -120,46 +115,48 @@ rm(list = ls())
 # #   arrange(FDNA) #order one more time, just to be safe
 # 
 # 
-# ######## WRITE PERO data to rds ############
+# ######## WRITE PERO160 data to rds ############
 # # Save to a rdata file
 # saveRDS(pero, file = here("pero_data_04.19.23.rds"))
 # #03.22.23 version has only location words, peridomestic, meteo data
 # #04.19.23 version has landscape words, synanthropic, and no meteo data
-
-#Restore Nanopore-sampled pero data from the rdata file
-pero_data <- readRDS(file = "pero_data_04.19.23.rds")
-
-#Create a short version of metadata
-# #if meteo data is included
+# 
+# #Restore Nanopore-sampled pero160 data from the rdata file
+# pero_data <- readRDS(file = "pero_data_04.19.23.rds")
+# 
+# #Create a short version of 160metadata
+# # #if meteo data is included
+# # pero_datashort <- pero_data %>%
+# #   select(location, landscape_type, site_type, loc_site, month, 
+# #          FDNA, pelage, sex, avg_hitemp, avg_lotemp, tot_precip, prev_precip)
 # pero_datashort <- pero_data %>%
-#   select(location, landscape_type, site_type, loc_site, month, 
-#          FDNA, pelage, sex, avg_hitemp, avg_lotemp, tot_precip, prev_precip)
-pero_datashort <- pero_data %>%
-  select(location, landscape_type, site_type, loc_site, month,
-         FDNA, ear_tag_number, sex, body_mass, pelage, reproductive)
+#   select(location, landscape_type, site_type, loc_site, month,
+#          FDNA, ear_tag_number, sex, body_mass, pelage, reproductive)
+# 
+# #### END 160 samples - BEGIN Pero140 data (no recaptures)
+# 
+# #subset pero_data to see only animals with multiple entries
+# recapped <- pero_data %>%
+#   filter(location=="CCESR") %>%
+#   group_by(ear_tag_number) %>%
+#   arrange(ear_tag_number) %>%
+#   mutate(ncaps = length(ear_tag_number)) %>%
+#   relocate(ncaps, .after=ear_tag_number) %>%
+#   filter(ncaps>1) %>%
+#   ungroup()
+# #every recapped animal was caught in July, so we'll keep those entries and remove others
+# remove <- recapped %>% filter(month != "July")
+# removeFDNAs.v <- remove$FDNA
+# 
+# #REMOVE DUPLICATE CAPTURES OF ANIMALS
+# pero140_data <- pero_data %>%
+#   filter(!FDNA %in% removeFDNAs.v)
+# 
+# ### WRITE Pero140 to RDS
+# saveRDS(pero140_data, file="pero140_data_01.05.24.rds") #landscape words, synanthropic, and no meteo data
 
-#Just FDNA and site
-samp_site <- pero_data %>% select(FDNA, loc_site)
-tag_loc <- pero_datashort %>% select(location, landscape_type, site_type, month, FDNA)
-
-################### FOR THE DIVERSITY ANALYSIS WITH THE 140 #########################
-
-#subset pero_data to see only animals with multiple entries
-recapped <- pero_data %>%
-  filter(location=="CCESR") %>%
-  group_by(ear_tag_number) %>%
-  arrange(ear_tag_number) %>%
-  mutate(ncaps = length(ear_tag_number)) %>%
-  relocate(ncaps, .after=ear_tag_number) %>%
-  filter(ncaps>1) %>%
-  ungroup()
-#every recapped animal was caught in July, so we'll keep those entries and remove others
-remove <- recapped %>% filter(month != "July")
-removeFDNAs.v <- remove$FDNA
-
-#REMOVE DUPLICATE CAPTURES OF ANIMALS
-pero140_data <- pero_data %>%
-  filter(!FDNA %in% removeFDNAs.v)
+#Restore Nanopore-sampled pero140 data from the rdata file
+pero140_data <- readRDS(file = "pero140_data_01.05.24.rds")
 
 #Create a short version of metadata
 # #with meteo data
@@ -170,6 +167,9 @@ pero140_datashort <- pero140_data %>%
   select(location, landscape_type, site_type, loc_site, month,
          FDNA, ear_tag_number, sex, body_mass, pelage, reproductive)
 
+#Just FDNA and site
+samp_site <- pero140_data %>% select(FDNA, loc_site)
+tag_loc <- pero140_datashort %>% select(location, landscape_type, site_type, month, FDNA)
 
 ###########################################################################
 ####### Load and Prep the Emu abundance data - from UMN MSI output ########
@@ -313,7 +313,7 @@ min_n_seq <- abundance_long %>% group_by(FDNA) %>%
 # #pull the data from rarecurve() **THANKS RIFFOMONAS PROJECT!
 # rarecurve_data <- rarecurve(abundance_vegan, step=1000)
 # #clean it up, plot rarecurve() data in ggplot **THANKS RIFFOMONAS PROJECT!
-# png(here("rarecurves.png"), width=1000, height=600)
+# png(here("rarecurves140.png"), width=1000, height=600)
 # map_dfr(rarecurve_data, bind_rows) %>%
 #   bind_cols(FDNA = rownames(abundance_vegan),.) %>%
 #   pivot_longer(-FDNA, names_to = "n_seq", values_to = "species_obs") %>%
@@ -461,6 +461,7 @@ alphatable <- rare_alpha_summary %>%
 #save as .csv
 write.csv(alphatable, here("Table_S3_v2.csv"))
 
+# library(kableExtra)
 # #pretty summary table - .png VERSION
 # rare_alpha_summary %>%
 #   mutate(obs = paste(mean_obs, "\u00B1", sd_obs, sep=" "),
@@ -1218,6 +1219,7 @@ rownames(adonisres) <- c("Landscape", "Habitat", "Sex", "Reproductive Status",
 adonisres <- adonisres %>% rownames_to_column(var="Variable")
 adonisres <- adonisres %>% mutate_if(is.numeric, round, digits=4)
 #pretty kable
+# library(kableExtra)
 adonisres %>% kbl() %>%
   kable_styling(full_width=FALSE) %>%
 row_spec(0, bold=T, color="black", background="#DAD7D7")
@@ -1628,6 +1630,7 @@ abundance_path %>%
 
 # #number of mice per pathogen, separated by loc_site
 # #not terribly interesting but here it is
+# library(kableExtra)
 # abundance_path %>%
 #   rownames_to_column(var="species") %>%
 #   pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
@@ -2008,6 +2011,7 @@ cvdPlot(plot)
 #   geom_boxplot()
 
 #mean sd relabundance by site
+# library(kableExtra)
 phy_relabund %>%
   filter(rel_abund>0.05) %>%
   group_by(phylum, loc_site) %>%
@@ -2052,16 +2056,30 @@ phy_relabund %>%
 
 
 
+##### NanoQ summary stats (for the 140, no recaps!)
 
+##### quick thing first - grab the FDNA ids for recapped animals to remove #####
+#Restore Nanopore-sampled pero160 data from the rdata file
+pero_data <- readRDS(file = "pero_data_04.19.23.rds")
+#subset pero_data to see only animals with multiple entries
+recapped <- pero_data %>%
+  filter(location=="CCESR") %>%
+  group_by(ear_tag_number) %>%
+  arrange(ear_tag_number) %>%
+  mutate(ncaps = length(ear_tag_number)) %>%
+  relocate(ncaps, .after=ear_tag_number) %>%
+  filter(ncaps>1) %>%
+  ungroup()
+#every recapped animal was caught in July, so we'll keep those entries and remove others
+remove <- recapped %>% filter(month != "July")
+removeFDNAs.v <- remove$FDNA
+##################################################
 
-
-
-##### check out the NanoQ summary stats
-
-#summaries of all the reads for results text
+#summaries of Pero140 reads for results text
 read_sumstats <- read.table(here("full_FilteredReads_summarystats.txt"), header=TRUE) %>%
   relocate(FDNA, .before=n_reads) %>%
-  left_join(tag_loc, by="FDNA")
+  left_join(tag_loc, by="FDNA") %>%
+  filter(!FDNA %in% removeFDNAs.v) #remove this line to keep all 160 sequenced samples (includes recaps)
 
 sum(read_sumstats$n_reads)
 mean(read_sumstats$mean_quality)
@@ -2075,6 +2093,7 @@ max(read_sumstats$n_reads)
 read_sumstats <- read.table(here("full_FilteredReads_summarystats.txt"), header=TRUE) %>%
   relocate(FDNA, .before=n_reads) %>% 
   left_join(tag_loc, by="FDNA") %>%
+  filter(!FDNA %in% removeFDNAs.v) %>% #remove this line to keep all 160 sequenced samples (includes recaps)
   group_by(landscape_type, site_type, month) %>%
   summarise(n_sample = length(FDNA),
             mean_n_reads = round(mean(n_reads)/1000, 2),
@@ -2088,6 +2107,7 @@ read_sumstats_CC <- read.table(here("full_FilteredReads_summarystats.txt"), head
   relocate(FDNA, .before=n_reads) %>% 
   left_join(tag_loc, by="FDNA") %>%
   filter(location=="CCESR") %>%
+  filter(!FDNA %in% removeFDNAs.v) %>% #remove this line to keep all 160 sequenced samples (includes recaps)
   group_by(landscape_type, site_type) %>%
   summarise(n_sample = length(FDNA),
             mean_n_reads = round(mean(n_reads)/1000, 2),
@@ -2102,25 +2122,27 @@ read_sumstats_CC <- read.table(here("full_FilteredReads_summarystats.txt"), head
 read_sumstats <- rbind(read_sumstats, read_sumstats_CC)
 read_sumstats$month <-fct_relevel(read_sumstats$month, c("June", "July", "August", "Summer"))
 
-#pretty summary table
-read_sumstats %>%
-  arrange(landscape_type, site_type, month) %>%
-  mutate(n_reads = paste(mean_n_reads, "\u00B1", sd_n_reads, sep=" "),
-         n_bp = paste(mean_bp, "\u00B1", sd_bp, sep=" "),
-         Q = paste(mean_Q, "\u00B1", sd_Q, sep=" ")) %>%
-  ungroup() %>%
-  select(!c(mean_n_reads, sd_n_reads, mean_bp, sd_bp, mean_Q, sd_Q)) %>%
-  kbl(format="html", escape=FALSE,
-      col.names = c("Landscape", "Habitat Type", "Month", "N",
-                    "N reads / sample <br>(thousands of reads)", "N basepairs / sample <br>(Mb)",
-                  "Q Score"), align='lllcccc') %>%
-  kable_styling(full_width=FALSE) %>%
-  row_spec(0, bold=T, color="black", background="#DAD7D7") %>%
-  row_spec(1:3, italic=TRUE, background="#F8F6F6") %>%
-  row_spec(4, bold=TRUE) %>%
-  row_spec(5:7, italic=TRUE, background="#F8F6F6") %>%
-  row_spec(8:10, bold=TRUE)
+# #pretty summary table - png version
+# library(kableExtra)
+# read_sumstats %>%
+#   arrange(landscape_type, site_type, month) %>%
+#   mutate(n_reads = paste(mean_n_reads, "\u00B1", sd_n_reads, sep=" "),
+#          n_bp = paste(mean_bp, "\u00B1", sd_bp, sep=" "),
+#          Q = paste(mean_Q, "\u00B1", sd_Q, sep=" ")) %>%
+#   ungroup() %>%
+#   select(!c(mean_n_reads, sd_n_reads, mean_bp, sd_bp, mean_Q, sd_Q)) %>%
+#   kbl(format="html", escape=FALSE,
+#       col.names = c("Landscape", "Habitat Type", "Month", "N",
+#                     "N reads / sample <br>(thousands of reads)", "N basepairs / sample <br>(Mb)",
+#                   "Q Score"), align='lllcccc') %>%
+#   kable_styling(full_width=FALSE) %>%
+#   row_spec(0, bold=T, color="black", background="#DAD7D7") %>%
+#   row_spec(1:3, italic=TRUE, background="#F8F6F6") %>%
+#   row_spec(4, bold=TRUE) %>%
+#   row_spec(5:7, italic=TRUE, background="#F8F6F6") %>%
+#   row_spec(8:10, bold=TRUE)
 
+#pretty summary table - table version for updating in Word
 sumstatstable <- read_sumstats %>% 
   arrange(landscape_type, site_type, month) %>%
   mutate(n_reads = paste(mean_n_reads, "\u00B1", sd_n_reads, sep=" "),
@@ -2135,8 +2157,7 @@ sumstatstable <- read_sumstats %>%
   rename("N reads / sample (thousands of reads)" = n_reads) %>%
   rename("N basepairs / sample (Mb)" = n_bp) %>%
   rename("Q Score" = Q)
-write.csv(sumstatstable, here("Table_1.csv"))
-
+write.csv(sumstatstable, here("Table_1-140.csv"))
 
 ##to display scientific notation
 # Mean_BP_millions = paste(formatC(mean_bp, format = "e", digits = 2),
@@ -2148,7 +2169,7 @@ write.csv(sumstatstable, here("Table_1.csv"))
 
 
 
-
+#####---------------- THE FOLLOWING CODE WAS RUN with the 160 data and has not been updated ----------------
 
 ########### THE FOLLOWING INCLUDES RECAP EVENTS #################
 
