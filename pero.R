@@ -269,23 +269,25 @@ abundance_long <- abundance %>%
 
 
 #########################################################################
-# #OTUs per sample
+# #OTUs per sample (for results text)
 # abundance %>% pivot_longer(-taxID, names_to = "FDNA", values_to="count") %>%
 #   filter(count != 0) %>%
 #   group_by(FDNA) %>%
 #   summarise(n_OTU = length(count)) %>%
-#   summarise(sd = sd(n_OTU)) #summarise(mean = mean(n_OTU)) 
-#   #summarise(max = max(n_OTU)) #summarise(min = min(n_OTU))
+#   summarise(sd = sd(n_OTU),
+#             mean = mean(n_OTU),
+#             max = max(n_OTU),
+#             min = min(n_OTU))
 #########################################################################
 
 
 ######### RAREFY ABUNDANCE (count) DATA ############
 
-#how many should we rarefy to? 74517 is minimum number of sequences in a sample
+#how many should we rarefy to? 74517 is minimum number of sequences in a sample (based on Emu output)
 #THANKS RIFFOMONAS PROJECT!
 min_n_seq <- abundance_long %>% group_by(FDNA) %>%
   summarise(n_seq = sum(count)) %>%
-  summarise(min = min(n_seq)) %>%
+  summarise(min = min(n_seq)) %>% 
   pull(min)
  
 # #mean and std dev of sequence length (also in the nanoq summary plots)
@@ -461,31 +463,31 @@ alphatable <- rare_alpha_summary %>%
 #save as .csv
 write.csv(alphatable, here("Table_S3_v2.csv"))
 
-# library(kableExtra)
-# #pretty summary table - .png VERSION
-# rare_alpha_summary %>%
-#   mutate(obs = paste(mean_obs, "\u00B1", sd_obs, sep=" "),
-#          shan = paste(mean_shan, "\u00B1", sd_shan, sep=" "),
-#          simp = paste(mean_simp, "\u00B1", sd_simp, sep=" "),
-#          even = paste(mean_even, "\u00B1", sd_even, sep=" ")) %>%
-#   select(!c(mean_obs, sd_obs, mean_shan, sd_shan, mean_simp, sd_simp, mean_even, sd_even)) %>%
-#   kbl(col.names = c("Landscape", "Habitat", "Month", "N",
-#                     paste("Observed Richness", footnote_marker_alphabet(1)), 
-#                     paste("Shannon Diversity", footnote_marker_alphabet(2)),
-#                     paste("Simpson Diversity", footnote_marker_alphabet(3)), 
-#                     paste("Evenness", footnote_marker_alphabet(4))),
-#                     escape = FALSE, 
-#       align="llllcccc") %>%
-#   kable_styling(full_width=FALSE) %>%
-#   row_spec(0, bold=T, color="black", background="#DAD7D7") %>%
-#   row_spec(1:3, italic=TRUE, background="#F8F6F6") %>%
-#   row_spec(4, bold=TRUE) %>%
-#   row_spec(5:7, italic=TRUE, background="#F8F6F6") %>%
-#   row_spec(8:10, bold=TRUE) %>%
-#   footnote(alphabet=c("Estimated number of observed species as identified by the expectation-maximization algorithm (Emu)", 
-#                       "Shannon diversity index gives equal weight to common and rare species", 
-#                       "Simpson diversity index gives higher weight to common species when calculating diversity", 
-#                       "Evenness measures the relative abundance of different taxa (Evenness = Shannon / Richness)"))
+library(kableExtra)
+#pretty summary table - .png VERSION
+rare_alpha_summary %>%
+  mutate(obs = paste(mean_obs, "\u00B1", sd_obs, sep=" "),
+         shan = paste(mean_shan, "\u00B1", sd_shan, sep=" "),
+         simp = paste(mean_simp, "\u00B1", sd_simp, sep=" "),
+         even = paste(mean_even, "\u00B1", sd_even, sep=" ")) %>%
+  select(!c(mean_obs, sd_obs, mean_shan, sd_shan, mean_simp, sd_simp, mean_even, sd_even)) %>%
+  kbl(col.names = c("Landscape", "Habitat", "Month", "N",
+                    paste("Observed Richness", footnote_marker_alphabet(1)),
+                    paste("Shannon Diversity", footnote_marker_alphabet(2)),
+                    paste("Simpson Diversity", footnote_marker_alphabet(3)),
+                    paste("Evenness", footnote_marker_alphabet(4))),
+                    escape = FALSE,
+      align="llllcccc") %>%
+  kable_styling(full_width=FALSE) %>%
+  row_spec(0, bold=T, color="black", background="#DAD7D7") %>%
+  row_spec(1:3, italic=TRUE, background="#F8F6F6") %>%
+  row_spec(4, bold=TRUE) %>%
+  row_spec(5:7, italic=TRUE, background="#F8F6F6") %>%
+  row_spec(8:10, bold=TRUE) %>%
+  footnote(alphabet=c("Estimated number of observed species as identified by the expectation-maximization algorithm (Emu)",
+                      "Shannon diversity index gives equal weight to common and rare species",
+                      "Simpson diversity index gives higher weight to common species when calculating diversity",
+                      "Evenness measures the relative abundance of different taxa (Evenness = Shannon / ln(Richness) )"))
 
 # rare_alpha_summary %>%
 #   mutate(obs = paste(mean_obs, "\u00B1", sd_obs, sep=" "),
@@ -549,6 +551,8 @@ write.csv(alphatable, here("Table_S3_v2.csv"))
 rich.mod <- lm(rare_obs ~ landscape_type + site_type + landscape_type:site_type + 
                  sex + reproductive + body_mass + month.n, 
                data=rare_alpha.avg)
+summary(rich.mod)
+anova(rich.mod)
 # #model diagnostics
 # # make a null model and compare full to null by AIC (difference of 2-4 is meaningful, lower AIC wins)
 # null.mod <- lm(rare_obs ~ 1, data=rare_alpha.avg)
@@ -561,9 +565,14 @@ richCI <- as.data.frame(confint(rich.mod, level=0.95)) %>% #gives CI for all par
   rownames_to_column(var = "param")
 rich <- as.data.frame(rich.summ$coefficients) %>% rownames_to_column(var="param") %>% 
   left_join(richCI, by="param") %>%
-  mutate(mod = "Richness") %>% mutate_if(is.numeric, round, digits=3)
+  mutate(mod = "Richness") %>% mutate_if(is.numeric, round, digits=3) %>%
+  unite("CI", "2.5 %", "97.5 %", sep=", ") %>%
+  dplyr::select(c("param", "Estimate", "CI", "Pr(>|t|)", "mod")) 
 
 write.csv(rich, here("mod.rich.csv")) #save this to make a table for the supplement
+
+library(sjPlot)
+tab_model(rich.mod, file="mod_richness.doc")
 
 # # 3. look at the residuals vs fitted plots (want nice clouds, look weird patterns!)
 # #### USE YOUR EYEBALLS FIRST! If the residual plots are fucked up, then go for the formal diagnostics
@@ -605,14 +614,19 @@ shan.mod <- lm(rare_shan ~ landscape_type + site_type + landscape_type:site_type
                  sex + reproductive + body_mass + month.n, 
                data=rare_alpha.avg)
 summary(shan.mod)
+anova(shan.mod)
 shan.summ <- summary(shan.mod)
 #to get 95% CI for model params
 shanCI <- as.data.frame(confint(shan.mod, level=0.95)) %>% #gives CI for all params, can also specify which you want
   rownames_to_column(var = "param")
 shan <- as.data.frame(shan.summ$coefficients) %>% rownames_to_column(var="param") %>%
   left_join(shanCI, by="param") %>%
-  mutate(mod = "Shannon") %>% mutate_if(is.numeric, round, digits=3)
+  mutate(mod = "Shannon") %>% mutate_if(is.numeric, round, digits=3) %>%
+  unite("CI", "2.5 %", "97.5 %", sep=", ") %>%
+  dplyr::select(c("param", "Estimate", "CI", "Pr(>|t|)", "mod")) 
 write.csv(shan, here("mod.shan.csv"))
+
+tab_model(shan.mod, file="mod_shannon.doc")
 
 # #model diagnostics
 # plot(shan.mod)
@@ -635,14 +649,23 @@ simp.mod <- betareg(rare_simp ~ landscape_type + site_type + landscape_type:site
                       sex + reproductive + body_mass + month.n, 
                     link="logit",
                     data=rare_alpha.avg)
+summary(simp.mod)
 simp.summ <- summary(simp.mod)
 #to get 95% CI for model params
 simpCI <- as.data.frame(confint(simp.mod, level=0.95)) %>% #gives CI for all params, can also specify which you want
   rownames_to_column(var = "param")
 simp <- as.data.frame(simp.summ$coefficients$mean) %>% rownames_to_column(var="param") %>% 
   left_join(simpCI, by="param") %>%
-  mutate(mod = "Simpson") %>% mutate_if(is.numeric, round, digits=3)
+  mutate(mod = "Simpson") %>% mutate_if(is.numeric, round, digits=3) %>%
+  unite("CI", "2.5 %", "97.5 %", sep=", ") %>%
+  dplyr::select(c("param", "Estimate", "CI", "Pr(>|z|)", "mod")) 
 write.csv(simp, here("mod.simp.csv"))
+
+tab_model(simp.mod, file="mod_simpson.doc")
+
+#https://stats.stackexchange.com/questions/255952/how-do-you-report-results-from-a-beta-regression-r-output
+library(memisc)
+mtable(simp.mod)
 
 # #model diagnostics
 # plot(simp.mod)
@@ -665,8 +688,12 @@ evenCI <- as.data.frame(confint(even.mod, level=0.95)) %>% #gives CI for all par
   rownames_to_column(var = "param")
 even <- as.data.frame(even.summ$coefficients$mean) %>% rownames_to_column(var="param") %>%
   left_join(evenCI, by="param") %>%
-  mutate(mod = "Evenness") %>% mutate_if(is.numeric, round, digits=3)
+  mutate(mod = "Evenness") %>% mutate_if(is.numeric, round, digits=3) %>%
+  unite("CI", "2.5 %", "97.5 %", sep=", ") %>%
+  dplyr::select(c("param", "Estimate", "CI", "Pr(>|z|)", "mod")) 
 write.csv(even, here("mod.even.csv"))
+
+tab_model(even.mod, file="mod_evenness.doc")
 
 # #model diagnostics
 # plot(even.mod)
@@ -689,16 +716,77 @@ write.csv(even, here("mod.even.csv"))
 #   scale_x_discrete(guide = guide_axis_nested(), name="location_type") 
 #############################################################
 
+#compare rarefied alpha diversity measures between landscape-habitat pairings
+library(FSA)
+kruskal.test(rare_obs ~ loc_site,  data = rare_alpha.avg)
+dunnTest(rare_obs ~ loc_site,  data = rare_alpha.avg,
+         method="holm")
+kruskal.test(rare_shan ~ loc_site,  data = rare_alpha.avg)
+dunnTest(rare_shan ~ loc_site,  data = rare_alpha.avg,
+         method="holm")
+kruskal.test(rare_simp ~ loc_site,  data = rare_alpha.avg)
+dunnTest(rare_simp ~ loc_site,  data = rare_alpha.avg,
+         method="holm")
+kruskal.test(rare_even ~ loc_site,  data = rare_alpha.avg)
+dunnTest(rare_even ~ loc_site,  data = rare_alpha.avg,
+         method="holm")
+
+### NOTE: (1/18/24) the tests above run with corrected pvalues for multiple comparisons
+### but the stat_compare_means() fxn in ggplot2 only shows the unadjusted pvalues
+## so the pvalues shown in the final figure are UNADJUSTED
+
 #plot observed
 
 #https://www.r-bloggers.com/2017/06/add-p-values-and-significance-levels-to-ggplots/
 library(ggpubr)
 # Perform pairwise comparisons
-compare_means(rare_obs ~ loc_site,  data = rare_alpha.avg)
+compare_means(rare_obs ~ loc_site,  data = rare_alpha.avg,
+              method = "wilcox.test",
+              p.adjust.method = "holm")
 # Visualize: Specify the comparisons you want
 my_comparisons <- list( c("Agricultural_Forest", "Undeveloped_Forest"), 
                         c("Agricultural_Synanthropic", "Undeveloped_Forest"), 
                         c("Undeveloped_Forest", "Undeveloped_Synanthropic") )
+
+############################### new 1.18.24 ###########################################
+#need to do some magic to show adjusted pvalues on the plots (ggpubr won't do it)
+#but it doesn't work with ggplot + geom_violin ? only with ggviolin which is uglier
+#so didn't use this plot version and manually updated pvalues in Inkscape *ugh*
+#https://www.datanovia.com/en/blog/ggpubr-how-to-add-p-values-generated-elsewhere-to-a-ggplot/
+#https://www.datanovia.com/en/lessons/kruskal-wallis-test-in-r/
+#https://rpkgs.datanovia.com/ggpubr/reference/stat_pvalue_manual.html
+
+# rare_alpha.avg <- rare_alpha.avg %>% rename(group=loc_site)
+# 
+# library(rstatix)
+# res.kruskal <- rare_alpha.avg %>% kruskal_test(rare_obs ~ group)
+# res.kruskal
+# pwc <- rare_alpha.avg %>%
+#   dunn_test(rare_obs ~ group, p.adjust.method = "holm")
+# pwc <- pwc %>% add_xy_position(x = "group")
+# pwc$p.scient <- format(pwc$p.adj, scientific = TRUE, digits = 3)
+# 
+# ggviolin(rare_alpha.avg, x = "group", y = "rare_obs", fill="group", alpha=0.7) +
+#   geom_jitter(width=0.1, alpha=0.5) +
+#   scale_fill_manual(values=c("#A67326", "#F0C907",
+#                              "#2c7c94", "#a6d0c8")) +
+#   stat_summary(fun = "mean",
+#                geom = "crossbar",
+#                width = 0.5,
+#                colour = "black") +
+#   stat_pvalue_manual(pwc, hide.ns = TRUE, label="p.scient") +
+#   labs(subtitle = get_test_label(res.kruskal, detailed = TRUE),
+#        caption = get_pwc_label(pwc),
+#        y = "Observed Richness") +
+#   theme_half_open() +
+#   theme(legend.position = "none",
+#         axis.title.x = element_blank(),
+#         axis.title.y = element_text(size=26, margin=margin(t = 0, r = 10, b = 0, l = 0, unit = "pt")),
+#         axis.text.y = element_text(size=16),
+#         axis.text.x = element_blank(),
+#         plot.margin = margin(t = 10, r = 25, b = 40, l = 10, unit = "pt"))
+###################################################################################
+
 
 # obs.plot <- rare_alpha.avg %>%
 #   ggplot(aes(y=rare_obs, x=site_type, fill=loc_site, alpha=0.7)) +
@@ -735,18 +823,18 @@ obs.plot <- rare_alpha.avg %>%
                width = 0.5,
                colour = "black") +
   stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
-  stat_compare_means(label.y = 440, size=5) +  # Add global p-value
+  stat_compare_means(label.y = 440, size=6) +  # Add global p-value
   theme(legend.position = "none",       
         axis.title.x = element_blank(),
-        axis.title.y = element_text(size=22),
-        axis.text.y = element_text(size=14),
-        axis.text.x = element_text(size=8),
-        plot.margin = margin(t = 10, r = 25, b = 0, l = 10, unit = "pt")) +
+        axis.title.y = element_text(size=26, margin=margin(t = 0, r = 10, b = 0, l = 0, unit = "pt")),
+        axis.text.y = element_text(size=16),
+        axis.text.x = element_blank(),
+        plot.margin = margin(t = 10, r = 25, b = 40, l = 10, unit = "pt")) +
   labs(y = "Observed Species Richness")
 #to edit the size of the pvalue text
 #https://stackoverflow.com/questions/48550525/ggpubr-change-font-size-of-stat-compare-means-kruskal-wallis-p-values
 library(gginnards)
-obs.plot$layers[[which_layers(obs.plot, "GeomSignif")]]$aes_params$textsize <- 5
+obs.plot$layers[[which_layers(obs.plot, "GeomSignif")]]$aes_params$textsize <- 6
 
 
 #plot Shannon
@@ -793,16 +881,16 @@ shan.plot <- rare_alpha.avg %>%
                width = 0.5,
                colour = "black") +
   stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
-  stat_compare_means(label.y = 5.25, size=5) +  # Add global p-value
+  stat_compare_means(label.y = 5.25, size=6) +  # Add global p-value
   theme(legend.position = "none",       
         axis.title.x = element_blank(),
-        axis.title.y = element_text(size=22),
-        axis.text.y = element_text(size=14),
-        axis.text.x = element_text(size=8),
-        plot.margin = margin(t = 10, r = 10, b = 0, l = 25, unit = "pt")) +
+        axis.title.y = element_text(size=26, margin=margin(t = 0, r = 10, b = 0, l = 0, unit = "pt")),
+        axis.text.y = element_text(size=16),
+        axis.text.x = element_blank(),
+        plot.margin = margin(t = 10, r = 10, b = 40, l = 25, unit = "pt")) +
   labs(y = "Shannon Diversity Index")
 #to edit the size of the pvalue text
-shan.plot$layers[[which_layers(shan.plot, "GeomSignif")]]$aes_params$textsize <- 5
+shan.plot$layers[[which_layers(shan.plot, "GeomSignif")]]$aes_params$textsize <- 6
 
 
 # c("#2c7c94", "#a6d0c8", 
@@ -854,16 +942,16 @@ simp.plot <- rare_alpha.avg %>%
                width = 0.5,
                colour = "black") +
   stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
-  stat_compare_means(label.y = 1.25, size=5) +  # Add global p-value
+  stat_compare_means(label.y = 1.25, size=6) +  # Add global p-value
   theme(legend.position = "none",       
         axis.title.x = element_blank(),
-        axis.title.y = element_text(size=22),
-        axis.text.y = element_text(size=14),
-        axis.text.x = element_text(size=8),
+        axis.title.y = element_text(size=26, margin=margin(t = 0, r = 10, b = 0, l = 0, unit = "pt")),
+        axis.text.y = element_text(size=16),
+        axis.text.x = element_blank(),
         plot.margin = margin(t = 25, r = 25, b = 10, l = 10, unit = "pt")) +
   labs(y = "Simpson Diversity Index")
 #to edit the size of the pvalue text
-simp.plot$layers[[which_layers(simp.plot, "GeomSignif")]]$aes_params$textsize <- 5
+simp.plot$layers[[which_layers(simp.plot, "GeomSignif")]]$aes_params$textsize <- 6
 
 
 #plot Evennness
@@ -909,24 +997,26 @@ even.plot <- rare_alpha.avg %>%
                width = 0.5,
                colour = "black") +
   stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
-  stat_compare_means(label.y = 0.94, size=5) +  # Add global p-value
+  stat_compare_means(label.y = 0.94, size=6) +  # Add global p-value
   theme(legend.position = "none",       
         axis.title.x = element_blank(),
-        axis.title.y = element_text(size=22),
-        axis.text.y = element_text(size=14),
-        axis.text.x = element_text(size=8),
+        axis.title.y = element_text(size=26, margin=margin(t = 0, r = 10, b = 0, l = 0, unit = "pt")),
+        axis.text.y = element_text(size=16),
+        axis.text.x = element_blank(),
         plot.margin = margin(t = 25, r = 10, b = 10, l = 25, unit = "pt")) +
   labs(y = "Shannon Evenness Index")
 #to edit the size of the pvalue text
-even.plot$layers[[which_layers(even.plot, "GeomSignif")]]$aes_params$textsize <- 5
+even.plot$layers[[which_layers(even.plot, "GeomSignif")]]$aes_params$textsize <- 6
 
 ######### COMPOSITE PLOT (publication-ready using cowplot) ##########
 
+## NOTE: the pvalues shown in the final figure are UNADJUSTED for multiple comparisons
+
 library(cowplot)
 
-png(here("alphadiv_plotv2.png"), width=1100, height=800)
+png(here("alphadiv_plotv2.png"), width=16, height=12, units = "in", res=600)
 plot_grid(obs.plot, shan.plot, simp.plot, even.plot, 
-          labels = "AUTO",label_size = 28)
+          labels = NULL,label_size = 28)
 dev.off()
 
 
@@ -1446,7 +1536,9 @@ abundance_spp <- rare_counts_mat %>% t() %>% #transpose so tax are rows
 
 # Restore abundance_path from the rdata file
 #rows are taxa, columns are samples
-abundance_path <- readRDS(file = "abundance_pathsp_12.20.23.rds") #has 39 species just like non-rarefied 160 analysis
+abundance_path <- readRDS(file = "abundance_pathsp_12.20.23.rds") 
+#has 39 species just like non-rarefied 160 analysis BUT many of these are superlow read counts (<50)
+#only 13 species with read counts >50
 
 
 ##########################################################################
@@ -1485,6 +1577,7 @@ n_distinct(data$FDNA) #41 animals had putative pathogens
 41/140 #about 29% -- tbh, that's pretty interesting
 
 # Perform pairwise comparisons of n_path by loc_site
+# library(ggpubr)
 compare_means(n_path ~ loc_site,  data = data) #there's nothing significant
 # # Visualize: Specify the comparisons you want
 # my_comparisons <- list( c("Agricultural_Forest", "Undeveloped_Forest"), 
@@ -1492,6 +1585,7 @@ compare_means(n_path ~ loc_site,  data = data) #there's nothing significant
 #                         c("Undeveloped_Forest", "Undeveloped_Synanthropic") )
 
 #plot n pathogens per mouse compare by loc_site -- there's nothing to see
+# library(cowplot)
 data %>%
   ggplot(aes(y=n_path, x=loc_site, fill=loc_site, alpha=0.7)) +
   geom_violin() +
@@ -1505,6 +1599,9 @@ data %>%
                colour = "black") +
   # stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value (option: label="p.signif" )
   stat_compare_means(label.y = 1.8, size=5)  # Add global p-value
+
+#number of pathogens per mouse by loc_site
+kruskal.test(n_path ~ loc_site, data=data)
 
 ####### ermagerd merdeling ########
 path_miceIDS <- unique(data$FDNA)
@@ -1523,7 +1620,6 @@ mod <- glm(pathfound ~ landscape_type + site_type + landscape_type*site_type,
            family=binomial(link="logit"), data=glmdata)
 summary(mod)
 plot(mod)
-
 #odds ratio (CI shouldn't cross 1: (0-1) means less likely, (1+) means more likely)
 exp(cbind(coef(mod), confint(mod)))
 
@@ -1597,7 +1693,7 @@ checkpath <- abundance_path %>%
   pivot_longer(-species, names_to = "FDNA", values_to = "count") %>%
   filter(count>50) %>% arrange(count) %>% #53 total pathogen detections
   # filter(count<200) #37 pathogens under 200 reads
-  # filter(count>500) #7 pathogens over 500 reads
+  filter(count>500) #7 pathogens over 500 reads
 
 #mean path per mouse, per loc_site
 abundance_path %>%
@@ -1687,12 +1783,12 @@ abundance_path %>%
         legend.title = element_text(size=12),
         legend.text= element_text(size=12),
         legend.position = "right",
-        strip.text = element_text(size=12, color="black"),
+        strip.text = element_text(size=10, color="black"),
         strip.background=element_rect(fill="#d3d3d3"),
         panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
 
-ggsave(here("path_heatmap_v2.eps"),
+ggsave(here("path_heatmap_rare140.eps"),
        plot= last_plot(),
        dpi=300,
        units="px")
@@ -1766,7 +1862,10 @@ samples = sample_data(pero_datashort_mat)
 #combine into a single phyloseq object
 abundance_phylo <- phyloseq(OTU, TAX, samples)
 # abundance_phylo
-
+#save it
+# saveRDS(abundance_phylo, file="abundance_phylo_forANCOM.RDS")
+#load it
+abundance_phylo <- readRDS(file="abundance_phylo_forANCOM.RDS")
 
 # #agglomerate by genus
 # abund_phylo_genus <- tax_glom(abundance_phylo, taxrank = "genus")
@@ -1880,6 +1979,7 @@ df_heat = df_locsite %>%
                names_to = "loc_site", values_to = "value") %>%
   mutate(value = round(value, 2))
 df_heat$species = factor(df_heat$species, levels = sort(sig_taxa))
+# n_distinct(df_heat$species) #38 differentially abundant species
 
 lo = floor(min(df_heat$value))
 up = ceiling(max(df_heat$value))
@@ -1889,15 +1989,23 @@ p_heat = df_heat %>%
   geom_tile(color = "black") +
   scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
                        na.value = "white", midpoint = mid, limit = c(lo, up),
-                       name = NULL) +
+                       name = "Log-fold change") +
   geom_text(aes(loc_site, species, label = value), color = "black", size = 4) +
   labs(x = NULL, y = NULL, 
-       title = "?BETA? for globally significant (putative pathogen species)") +
+       title = "Log-fold change for globally significant bacterial species") +
+  scale_y_discrete(limits=rev) + #flip the y axis to be alphabetical top to bottom
   theme_minimal() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text = element_text(size=12))
+
+png(here("ancombc2_results.png"), width=10, height=10, units="in", res=600)
 p_heat
+dev.off()
 
-
+ggsave(here("ancombc2_results.eps"),
+       plot= last_plot(),
+       dpi=300,
+       units="px")
 
 #alternatively
 #https://www.nicholas-ollberding.com/post/introduction-to-the-statistical-analysis-of-microbiome-data-in-r/
