@@ -1,3 +1,9 @@
+#Code written by Janine Mistrick
+#run in RStudio on R version 4.3.2 "Eye Holes"
+#all analyses associated with manuscript in revision (preprint available on Authorea)
+## TITLE
+## AUTHORS
+
 #install phyloseq, ANCOMBC
 # if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
 # BiocManager::install("phyloseq")
