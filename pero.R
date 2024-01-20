@@ -167,6 +167,7 @@ pero140_datashort <- pero140_data %>%
   select(location, landscape_type, site_type, loc_site, month,
          FDNA, ear_tag_number, sex, body_mass, pelage, reproductive)
 
+
 #Just FDNA and site
 samp_site <- pero140_data %>% select(FDNA, loc_site)
 tag_loc <- pero140_datashort %>% select(location, landscape_type, site_type, month, FDNA)
@@ -575,7 +576,7 @@ library(sjPlot)
 tab_model(rich.mod, file="mod_richness.doc")
 
 # # 3. look at the residuals vs fitted plots (want nice clouds, look weird patterns!)
-# #### USE YOUR EYEBALLS FIRST! If the residual plots are fucked up, then go for the formal diagnostics
+# #### USE YOUR EYEBALLS FIRST! If the residual plots are bad, then go for the formal diagnostics
 # #base R plots (hit return to see them all)
 # plot(rich.mod) #diagnostic plots
 # #or use 'performance' package
@@ -663,9 +664,9 @@ write.csv(simp, here("mod.simp.csv"))
 
 tab_model(simp.mod, file="mod_simpson.doc")
 
-#https://stats.stackexchange.com/questions/255952/how-do-you-report-results-from-a-beta-regression-r-output
-library(memisc)
-mtable(simp.mod)
+# #https://stats.stackexchange.com/questions/255952/how-do-you-report-results-from-a-beta-regression-r-output
+# library(memisc)
+# mtable(simp.mod)
 
 # #model diagnostics
 # plot(simp.mod)
