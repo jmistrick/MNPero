@@ -6,7 +6,9 @@ The files in this repo are as follows:
 pero.R - the R script for all the analyses
 
 And the following data files called in the R script:
+
 .tsv files containing read count estimates for all sequenced fecal samples and all identified bacteria (based on Emu taxonomic identification algorithm)
+
 C_f_aug_unfilt_emu-combined-tax_id-counts.tsv - read counts for Cedar Creek (agricultural) forest sites in August 2019
 C_f_july_unfilt_emu-combined-tax_id-counts.tsv - read counts for Cedar Creek (agricultural) forest sites in July 2019
 C_f_june_unfilt_emu-combined-tax_id-counts.tsv - read counts for Cedar Creek (agricultural) forest sites in June 2019
