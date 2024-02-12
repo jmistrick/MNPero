@@ -1,3 +1,4 @@
+# Minnesota <i>Peromyscus</i> mouse microbiome
 This repo contains the R code and necessary files to run the analyses for the analysis of the fecal microbiome of rodents trapped in Minnesota, USA in Summer 2019.
 These analyses as associated with the publication: TITLE. Authors.
 
