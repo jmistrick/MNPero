@@ -1831,4 +1831,4 @@ p_heat
 dev.off()
 
 ### THE END ###
-## thanks for following along! :) ##
+## Thanks for following along! :) ##
