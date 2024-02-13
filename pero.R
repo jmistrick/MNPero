@@ -14,16 +14,17 @@
 #bacteria_list.csv #list of putative bacterial pathogen species compiled by JM
 
 #and the following .tsv files containing the raw output from the Emu algorithm: (all available at https://github.com/jmistrick/MNpeRo)
-#C_p_june_unfilt_emu-combined-tax_id-counts.tsv #agricultral synathropic June
-#C_p_july_unfilt_emu-combined-tax_id-counts.tsv #agricultral synathropic July
-#C_p_aug_unfilt_emu-combined-tax_id-counts.tsv #agricultral synathropic August
-#C_f_june_unfilt_emu-combined-tax_id-counts.tsv #agricultral forest June
-#C_f_july_unfilt_emu-combined-tax_id-counts.tsv #agricultral forest July
-#C_f_aug_unfilt_emu-combined-tax_id-counts.tsv #agricultral forest August
+#C_p_june_unfilt_emu-combined-tax_id-counts.tsv #agricultural synathropic June
+#C_p_july_unfilt_emu-combined-tax_id-counts.tsv #agricultural synathropic July
+#C_p_aug_unfilt_emu-combined-tax_id-counts.tsv #agricultural synathropic August
+#C_f_june_unfilt_emu-combined-tax_id-counts.tsv #agricultural forest June
+#C_f_july_unfilt_emu-combined-tax_id-counts.tsv #agricultural forest July
+#C_f_aug_unfilt_emu-combined-tax_id-counts.tsv #agricultural forest August
 #I_p_unfilt_emu-combined-tax_id-counts.tsv #undeveloped synanthropic (July)
 #I_f_unfilt_emu-combined-tax_id-counts.tsv #undeveloped forest (July)
 
 #raw sequence data are available via the NCBI Sequence Read Archive under Accession: PRJNA1068550
+  #https://www.ncbi.nlm.nih.gov/bioproject/PRJNA1068550
 
 #-----------------------------------------------------
   
@@ -1664,17 +1665,6 @@ abundance_path %>%
 dev.off()
 
 ###################################################################################
-
-
-
-
-
-
-
-
-
-
-
 
 
 
