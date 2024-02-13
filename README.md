@@ -3,7 +3,7 @@ This repository contains the R code and necessary data files for an analysis of 
 
 These analyses are associated with the publication: "Microbiome diversity and zoonotic bacterial pathogen prevalence in Peromyscus mice from agricultural landscapes and synanthropic habitat". Janine Mistrick, Evan J. Kipp, Sarah I. Weinberg, Collin C. Adams, Peter A. Larsen, & Meggan E. Craft.
 
-This repository has been archived with Zenodo: LINK
+This repository has been archived with Zenodo: <a href="https://zenodo.org/doi/10.5281/zenodo.10655836"><img src="https://zenodo.org/badge/731797291.svg" alt="DOI"></a>
 
 ---
 
