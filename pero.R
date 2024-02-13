@@ -10,6 +10,8 @@
 #this code runs by sourcing the following files:
 #MN_Pero_field_data_v10.8.19.csv #field data from all Pero captures
 #sampleID_to_barcode.csv #file linking fecal sample IDs to Nanopore sequencing run/barcode number
+#PHIbase_pathogen_species_list.csv #list of putative bacterial pathogen species from PHIbase database
+#bacteria_list.csv #list of putative bacterial pathogen species compiled by JM
 
 #-----------------------------------------------------
   
