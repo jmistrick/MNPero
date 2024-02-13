@@ -3,15 +3,27 @@
 #All analyses associated with manuscript: 
 # "Microbiome diversity and zoonotic bacterial pathogen prevalence 
   # in Peromyscus mice from agricultural landscapes and synanthropic habitat". 
-  # Janine Mistrick, Evan Kipp, Sarah Weinberg, Collin Adams, Peter Larsen, & Meggan Craft. 
+  # Janine Mistrick, Evan J. Kipp, Sarah I. Weinberg, Collin C. Adams, Peter A. Larsen, & Meggan E. Craft. 
 
 #run in RStudio on R version 4.3.2 "Eye Holes"
 
-#this code runs by sourcing the following files:
+#this code runs by sourcing the following files: (all available at https://github.com/jmistrick/MNpeRo)
 #MN_Pero_field_data_v10.8.19.csv #field data from all Pero captures
 #sampleID_to_barcode.csv #file linking fecal sample IDs to Nanopore sequencing run/barcode number
 #PHIbase_pathogen_species_list.csv #list of putative bacterial pathogen species from PHIbase database
 #bacteria_list.csv #list of putative bacterial pathogen species compiled by JM
+
+#and the following .tsv files containing the raw output from the Emu algorithm: (all available at https://github.com/jmistrick/MNpeRo)
+#C_p_june_unfilt_emu-combined-tax_id-counts.tsv #agricultral synathropic June
+#C_p_july_unfilt_emu-combined-tax_id-counts.tsv #agricultral synathropic July
+#C_p_aug_unfilt_emu-combined-tax_id-counts.tsv #agricultral synathropic August
+#C_f_june_unfilt_emu-combined-tax_id-counts.tsv #agricultral forest June
+#C_f_july_unfilt_emu-combined-tax_id-counts.tsv #agricultral forest July
+#C_f_aug_unfilt_emu-combined-tax_id-counts.tsv #agricultral forest August
+#I_p_unfilt_emu-combined-tax_id-counts.tsv #undeveloped synanthropic (July)
+#I_f_unfilt_emu-combined-tax_id-counts.tsv #undeveloped forest (July)
+
+#raw sequence data are available via the NCBI Sequence Read Archive under Accession: PRJNA1068550
 
 #-----------------------------------------------------
   
