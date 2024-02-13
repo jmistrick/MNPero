@@ -1,22 +1,30 @@
 #Code written by Janine Mistrick
-#run in RStudio on R version 4.3.2 "Eye Holes"
-#all analyses associated with manuscript in revision (preprint available on Authorea)
-## TITLE
-## AUTHORS
 
-#install phyloseq, ANCOMBC
-# if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-# BiocManager::install("phyloseq")
-# BiocManager::install("ANCOMBC")
+#All analyses associated with manuscript: 
+# "Microbiome diversity and zoonotic bacterial pathogen prevalence 
+  # in Peromyscus mice from agricultural landscapes and synanthropic habitat". 
+  # Janine Mistrick, Evan Kipp, Sarah Weinberg, Collin Adams, Peter Larsen, & Meggan Craft. 
+
+#run in RStudio on R version 4.3.2 "Eye Holes"
+
+#this code runs by sourcing the following files:
+#MN_Pero_field_data_v10.8.19.csv 
+
+-----------------------------------------------------
+  
+#To install Phyloseq and ANCOMBC (if not already locally installed)
+if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+BiocManager::install("phyloseq")
+BiocManager::install("ANCOMBC")
 
 library(vegan)
 library(phyloseq)
 library(here)
 library(janitor)
 library(lubridate)
-library(ggtext) #to add stress value
-# library(RColorBrewer)
-# library(colorBlindness)
+library(ggtext)
+# library(RColorBrewer) 
+# library(colorBlindness) #needed to run cvdPlot() function
 library(tidyverse)
 
 #clear environment
@@ -26,155 +34,113 @@ rm(list = ls())
 ####### Load and Prep the Pero data - from 2019 field captures ########
 #######################################################################
 
-# #load data
-# pero <- read.csv(here("MN_pero_raw_labeled_v10.8.19.csv"), na.strings=c(""," ","NA"))
-# #pull ecto parasite columns if desired
-# pero_ecto <- pero %>% dplyr::select(c(ear_tag_number, feces_number, fleas, botflies, botscars, wounds,
-#                                   ticks_head, ticks_neck, tick_taken_number))
+# load and clean data
+pero <- read.csv(here("MN_pero_raw_labeled_v10.8.19.csv"), na.strings=c(""," ","NA")) %>%
+  clean_names() %>%
+  filter(species=="pspp") %>% #filter out non-Pero captures
+  select(!species) %>%
+  filter(capture!="WR") %>% #remove within-month recapture entries (duplicate fecal samples eg "026-2" were combined prior to DNA extraction)
+  drop_na(feces_number) %>% #drop entries with no feces sample
+  dplyr::select(!c(id, date_data_entry, data_enterer,
+                   field_site_detail, trap_number, animals_per_trap,
+                   weather, processing_time, handler, data_recorder,
+                   dna_number, blood_number, eye_bled, dead, dead_in_trap, rigor_mortis,
+                   vd_eye_number, notes)) %>% #drop unneeded columns
+  dplyr::select(!c(fleas, botflies, botscars, wounds,
+                   ticks_head, ticks_neck, tick_taken_number)) %>% #drop ecto parasite data
+  mutate(processing_date = as_date(processing_date, format="%m/%d/%Y"),
+         month = lubridate::month(processing_date, label=TRUE, abbr = FALSE),
+         location = as.factor(location),
+         landscape_type = as.factor(case_when(location=="CCESR" ~ "Agricultural",
+                                              location=="IBSL" ~ "Undeveloped")),
+         field_site = as.character(field_site),
+         site_type = as.factor(ifelse(grepl("perid", field_site), "Synanthropic",
+                            ifelse(grepl("maintenance", field_site), "Synanthropic", "Forest"))),
+         capture = as.factor(capture),
+         FDNA = as.character(paste0("F", feces_number)),
+         feces_number = as.numeric(feces_number),
+         pelage = as.factor(pelage),
+         sex = as.factor(sex),
+         testes = as.factor(testes),
+         perforate = as.factor(perforate),
+         nipples = as.factor(nipples),
+         lactating = as.factor(lactating),
+         pregnant = as.factor(pregnant)) %>% #reformat columns - "FDNA" indicates fecal DNA sample ID
+  mutate(reproductive = case_when(testes == "1" ~ "1",
+                                  perforate == "1" | nipples == "1" | lactating == "1" | pregnant == "1" ~ "1",
+                                  testes == "0" ~ "0",
+                                  perforate == "0" & nipples == "0" & lactating == "0" & pregnant == "0" ~ "0")) %>%
+  rows_patch(tibble(FDNA=c("F070", "F124", "F136"), body_mass=c(24,21,17))) %>% #patch in missing body_mass values (based on field estimates from NOTES column)
+  dplyr::select(!c(processing_date, field_site)) %>% #remove unneeded columns
+  unite(loc_site, landscape_type, site_type, remove=FALSE) %>%
+  mutate(loc_site = as.factor(loc_site)) %>%
+  mutate(ear_tag_number = ifelse(is.na(ear_tag_number), feces_number, ear_tag_number)) %>% #give all the IBSL mice an 'ear tag' based on their fecal sample ID number
+  select(location, landscape_type, loc_site, site_type, month,
+         ear_tag_number, capture, FDNA, feces_number, body_mass, body_length,
+         sex, pelage, reproductive) %>% #reorder columns (and drop unneeded)
+  arrange(FDNA) #arrange numerically by FDNA#
 
-#### THE FOLLOWING CODE has been commented out and instead just pull the .rds file - MARCH 9 2023 ####
+#check to make sure nothing is weird
+# unique(pero$processing_date)
+# unique(pero$location)
+# unique(pero$field_site)
+# unique(pero$pelage)
+# unique(pero$sex)
+# unique(pero$testes)
+# unique(pero$perforate)
+# unique(pero$nipples)
+# unique(pero$lactating)
+# unique(pero$pregnant)
 
-# # load and clean data
-# pero <- read.csv(here("MN_pero_raw_labeled_v10.8.19.csv"), na.strings=c(""," ","NA")) %>%
-#   clean_names() %>%
-#   filter(species=="pspp") %>% #filter out non-Pero captures
-#   select(!species) %>%
-#   filter(capture!="WR") %>% #remove WR entries (duplicate fecal samples eg "026-2" were combined prior to DNA extraction)
-#   drop_na(feces_number) %>% #drop entries with no feces sample
-#   dplyr::select(!c(id, date_data_entry, data_enterer,
-#                    field_site_detail, trap_number, animals_per_trap,
-#                    weather, processing_time, handler, data_recorder,
-#                    dna_number, blood_number, eye_bled, dead, dead_in_trap, rigor_mortis,
-#                    vd_eye_number, notes)) %>% #drop unneeded columns
-#   dplyr::select(!c(fleas, botflies, botscars, wounds,
-#                    ticks_head, ticks_neck, tick_taken_number)) %>% #drop ecto parasite data
-#   mutate(processing_date = as_date(processing_date, format="%m/%d/%Y"),
-#          month = lubridate::month(processing_date, label=TRUE, abbr = FALSE),
-#          location = as.factor(location),
-#          landscape_type = as.factor(case_when(location=="CCESR" ~ "Agricultural",
-#                                               location=="IBSL" ~ "Undeveloped")),
-#          field_site = as.character(field_site),
-#          site_type = as.factor(ifelse(grepl("perid", field_site), "Synanthropic",
-#                             ifelse(grepl("maintenance", field_site), "Synanthropic", "Forest"))),
-#          capture = as.factor(capture),
-#          FDNA = as.character(paste0("F", feces_number)),
-#          feces_number = as.numeric(feces_number),
-#          pelage = as.factor(pelage),
-#          sex = as.factor(sex),
-#          testes = as.factor(testes),
-#          perforate = as.factor(perforate),
-#          nipples = as.factor(nipples),
-#          lactating = as.factor(lactating),
-#          pregnant = as.factor(pregnant)) %>% #reformat columns
-#   mutate(reproductive = case_when(testes == "1" ~ "1",
-#                                   perforate == "1" | nipples == "1" | lactating == "1" | pregnant == "1" ~ "1",
-#                                   testes == "0" ~ "0",
-#                                   perforate == "0" & nipples == "0" & lactating == "0" & pregnant == "0" ~ "0")) %>%
-#   rows_patch(tibble(FDNA=c("F070", "F124", "F136"), body_mass=c(24,21,17))) %>% #patch in missing body_mass values (based on field estimates from NOTES column)
-#   dplyr::select(!c(processing_date, field_site)) %>% #remove unneeded columns
-#   unite(loc_site, landscape_type, site_type, remove=FALSE) %>%
-#   mutate(loc_site = as.factor(loc_site)) %>%
-#   mutate(ear_tag_number = ifelse(is.na(ear_tag_number), feces_number, ear_tag_number)) %>% #give all the IBSL mice an 'ear tag'
-#   select(location, landscape_type, loc_site, site_type, month,
-#          ear_tag_number, capture, FDNA, feces_number, body_mass, body_length,
-#          sex, pelage, reproductive) %>% #reorder columns (and drop unneeded)
-#   arrange(FDNA) #arrange numerically by FDNA#
-# 
-# 
-# #check to make sure nothing is weird
-# # unique(pero$processing_date)
-# # unique(pero$location)
-# # unique(pero$field_site)
-# # unique(pero$pelage)
-# # unique(pero$sex)
-# # unique(pero$testes)
-# # unique(pero$perforate)
-# # unique(pero$nipples)
-# # unique(pero$lactating)
-# # unique(pero$pregnant)
-# 
-# #read in Nanopore barcode IDs
-# nanopore <- read.csv(here("sampleID_to_barcode.csv")) %>%
-#   separate(sample, c(NA, "feces_number")) %>% #separate fecal sample ID (F-###) into two columns, just keep ###
-#   mutate(feces_number = as.numeric(feces_number)) %>%
-#   arrange(feces_number)
-# 
-# # #confirm that every row in 'nanopore' matches a row in 'pero'
-# # check <- anti_join(nanopore, pero, by="feces_number") #if this is 0, you're good
-# 
-# #join pero and nanopore
-# pero <- pero %>% left_join(nanopore, by="feces_number") %>%
-#   select(!feces_number) #drop unneeded column
-# 
-# #separate out samples not sequenced
-# pero_notsequenced <- pero %>% filter(is.na(date_barcode))
-# 
-# #filter pero down to only samples sequenced
-# pero <- pero %>% drop_na(date_barcode) %>%
-#   arrange(FDNA)
-# 
-# # #Restore CC and IBSL meteo data from the rdata file
-# # meteo_summary <- readRDS(file = "meteo_summary.rds") %>%
-# #   mutate(location = as.factor(location))
-# # #join to pero data
-# # pero <- pero %>% left_join(meteo_summary, by=c("location", "month")) %>%
-# #   arrange(FDNA) #order one more time, just to be safe
-# 
-# 
-# ######## WRITE PERO160 data to rds ############
-# # Save to a rdata file
-# saveRDS(pero, file = here("pero_data_04.19.23.rds"))
-# #03.22.23 version has only location words, peridomestic, meteo data
-# #04.19.23 version has landscape words, synanthropic, and no meteo data
-# 
-# #Restore Nanopore-sampled pero160 data from the rdata file
-# pero_data <- readRDS(file = "pero_data_04.19.23.rds")
-# 
-# #Create a short version of 160metadata
-# # #if meteo data is included
-# # pero_datashort <- pero_data %>%
-# #   select(location, landscape_type, site_type, loc_site, month, 
-# #          FDNA, pelage, sex, avg_hitemp, avg_lotemp, tot_precip, prev_precip)
-# pero_datashort <- pero_data %>%
-#   select(location, landscape_type, site_type, loc_site, month,
-#          FDNA, ear_tag_number, sex, body_mass, pelage, reproductive)
-# 
-# #### END 160 samples - BEGIN Pero140 data (no recaptures)
-# 
-# #subset pero_data to see only animals with multiple entries
-# recapped <- pero_data %>%
-#   filter(location=="CCESR") %>%
-#   group_by(ear_tag_number) %>%
-#   arrange(ear_tag_number) %>%
-#   mutate(ncaps = length(ear_tag_number)) %>%
-#   relocate(ncaps, .after=ear_tag_number) %>%
-#   filter(ncaps>1) %>%
-#   ungroup()
-# #every recapped animal was caught in July, so we'll keep those entries and remove others
-# remove <- recapped %>% filter(month != "July")
-# removeFDNAs.v <- remove$FDNA
-# 
-# #REMOVE DUPLICATE CAPTURES OF ANIMALS
-# pero140_data <- pero_data %>%
-#   filter(!FDNA %in% removeFDNAs.v)
-# 
+#read in Nanopore barcode IDs
+nanopore <- read.csv(here("sampleID_to_barcode.csv")) %>%
+  separate(sample, c(NA, "feces_number")) %>% #separate fecal sample ID (F-###) into two columns, just keep ###
+  mutate(feces_number = as.numeric(feces_number)) %>%
+  arrange(feces_number)
+
+# #confirm that every row in 'nanopore' matches a row in 'pero'
+# check <- anti_join(nanopore, pero, by="feces_number") #if this is 0, you're good
+
+#join pero and nanopore
+pero <- pero %>% left_join(nanopore, by="feces_number") %>%
+  select(!feces_number) #drop unneeded column
+
+#separate out samples not sequenced
+pero_notsequenced <- pero %>% filter(is.na(date_barcode))
+
+#filter pero down to only samples sequenced
+pero <- pero %>% drop_na(date_barcode) %>%
+  arrange(FDNA)
+
+#subset pero_data to see only animals with multiple entries (captured in multiple months)
+recapped <- pero_data %>%
+  filter(location=="CCESR") %>%
+  group_by(ear_tag_number) %>%
+  arrange(ear_tag_number) %>%
+  mutate(ncaps = length(ear_tag_number)) %>%
+  relocate(ncaps, .after=ear_tag_number) %>%
+  filter(ncaps>1) %>%
+  ungroup()
+#every recapped animal was caught in July, so we'll keep those entries and remove others
+remove <- recapped %>% filter(month != "July")
+removeFDNAs.v <- remove$FDNA
+
+#REMOVE DUPLICATE CAPTURES OF ANIMALS - n=140 unique mouse captures
+pero140_data <- pero_data %>%
+  filter(!FDNA %in% removeFDNAs.v)
+
 # ### WRITE Pero140 to RDS
-# saveRDS(pero140_data, file="pero140_data_01.05.24.rds") #landscape words, synanthropic, and no meteo data
-
-#Restore Nanopore-sampled pero140 data from the rdata file
-pero140_data <- readRDS(file = "pero140_data_01.05.24.rds")
+# saveRDS(pero140_data, file="pero140_data_01.05.24.rds")
+# 
+# #Restore Nanopore-sampled pero140 data from the rdata file
+# pero140_data <- readRDS(file = "pero140_data_01.05.24.rds")
 
 #Create a short version of metadata
-# #with meteo data
-# pero140_datashort <- pero140_data %>%
-#   select(location, landscape_type, site_type, loc_site, month, 
-#          FDNA, pelage, sex, avg_hitemp, avg_lotemp, tot_precip, prev_precip)
 pero140_datashort <- pero140_data %>%
   select(location, landscape_type, site_type, loc_site, month,
          FDNA, ear_tag_number, sex, body_mass, pelage, reproductive)
 
-
-#Just FDNA and site
+#pull just FDNA and site
 samp_site <- pero140_data %>% select(FDNA, loc_site)
 tag_loc <- pero140_datashort %>% select(location, landscape_type, site_type, month, FDNA)
 
@@ -183,78 +149,75 @@ tag_loc <- pero140_datashort %>% select(location, landscape_type, site_type, mon
 ##### Create (count) abundance table per sample to the SPECIES LEVEL ######
 ###########################################################################
 
-### NON-THRESHOLDED ABUNDANCE DATA - this is the 'raw' output from EMU - relabundance can be as low as it wants
-### AS OF FEB 27 2023 - THESE ARE THE EMU DATA I'M USING
+### NON-THRESHOLDED ABUNDANCE DATA - this is the 'raw' output from EMU - relative abundance can be as low as it wants
 
 ############# NON thresholded ABUNDANCE DATA #######################
 ################ TAXONOMIC INFO REMOVED ############################
-# #read in the emu output from each site, remove the taxonomic info columns
-# CC_peri_june_abund <- read.table(file = here("C_p_june_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE)  %>%
-#   select(!c(species, genus, family, order, class, phylum, superkingdom))
-# CC_peri_july_abund <- read.table(file = here("C_p_july_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
-#   select(!c(species, genus, family, order, class, phylum, superkingdom))
-# CC_peri_aug_abund <- read.table(file = here("C_p_aug_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
-#   select(!c(species, genus, family, order, class, phylum, superkingdom))
-# 
-# CC_forest_june_abund <- read.table(file = here("C_f_june_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
-#   select(!c(species, genus, family, order, class, phylum, superkingdom))
-# CC_forest_july_abund <- read.table(file = here("C_f_july_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
-#   select(!c(species, genus, family, order, class, phylum, superkingdom))
-# CC_forest_aug_abund <- read.table(file = here("C_f_aug_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
-#   select(!c(species, genus, family, order, class, phylum, superkingdom))
-# 
-# IBSL_peri_abund <- read.table(file = here("I_p_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
-#   select(!c(species, genus, family, order, class, phylum, superkingdom))
-# IBSL_forest_abund <- read.table(file = here("I_f_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
-#   select(!c(species, genus, family, order, class, phylum, superkingdom))
-# 
-# #stick all these suckers together
-# abundance <- full_join(CC_peri_june_abund, CC_peri_july_abund, by="tax_id")
-# abundance <- full_join(abundance, CC_peri_aug_abund, by="tax_id")
-# abundance <- full_join(abundance, CC_forest_june_abund, by="tax_id")
-# abundance <- full_join(abundance, CC_forest_july_abund, by="tax_id")
-# abundance <- full_join(abundance, CC_forest_aug_abund, by="tax_id")
-# abundance <- full_join(abundance, IBSL_forest_abund, by="tax_id")
-# abundance <- full_join(abundance, IBSL_peri_abund, by="tax_id")
-# 
-# #input 0 for count=NA
-# abundance <- abundance %>% replace(is.na(.), 0) %>%
-#   dplyr::rename(taxID = tax_id) %>%
-#   filter(!taxID=="unassigned") #remove 'unassigned' ID
-# 
-# ########### this little bit of code will cut down the sample ID columns ###############
-# ###### https://community.rstudio.com/t/shorten-column-names-in-data-frame/143129 ######
-# 
-# long_names <- colnames(abundance)
-# 
-# short_names <- lapply(
-#   X = strsplit(x = long_names, split = "_"),
-#   FUN = function(x) paste0(head(x, n = 1)))
-# 
-# colnames(abundance) <- short_names
-# ########################################################################################
-# 
-# # Regarding "count" values in abundance table: PLEASE NOTE!! (from Emu Github documentation):
-# # "Note: Estimated read counts are based on likelihood probabilities and therefore may not be integer values."
-# 
-# #change counts to integers, remove duplicate FDNAs, arrange FDNA numerically
-# abundance <- abundance %>%
-#   pivot_longer(-taxID, names_to= "FDNA", values_to = "count") %>% #pivot longer, ignore the taxID column and pivot FDNA and counts
-#   mutate(count = round(count, digits=0)) %>% #round "counts" to nearest whole number
-#   filter(!FDNA %in% removeFDNAs.v) %>%
-#   arrange(FDNA) %>% #order by FDNA#
-#   pivot_wider(names_from = FDNA, values_from = count)
-# 
-# #### ABUNDANCE is a df where: SAMPLES are COLUMNS, TAXA are ROWS, TAXID is a COLUMN
+#read in the emu output from each site, remove the taxonomic info columns
+CC_peri_june_abund <- read.table(file = here("C_p_june_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE)  %>%
+  select(!c(species, genus, family, order, class, phylum, superkingdom))
+CC_peri_july_abund <- read.table(file = here("C_p_july_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
+  select(!c(species, genus, family, order, class, phylum, superkingdom))
+CC_peri_aug_abund <- read.table(file = here("C_p_aug_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
+  select(!c(species, genus, family, order, class, phylum, superkingdom))
+
+CC_forest_june_abund <- read.table(file = here("C_f_june_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
+  select(!c(species, genus, family, order, class, phylum, superkingdom))
+CC_forest_july_abund <- read.table(file = here("C_f_july_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
+  select(!c(species, genus, family, order, class, phylum, superkingdom))
+CC_forest_aug_abund <- read.table(file = here("C_f_aug_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
+  select(!c(species, genus, family, order, class, phylum, superkingdom))
+
+IBSL_peri_abund <- read.table(file = here("I_p_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
+  select(!c(species, genus, family, order, class, phylum, superkingdom))
+IBSL_forest_abund <- read.table(file = here("I_f_unfilt_emu-combined-tax_id-counts.tsv"), sep = '\t', header = TRUE) %>%
+  select(!c(species, genus, family, order, class, phylum, superkingdom))
+
+#concatenate Emu abundance for all sites
+abundance <- full_join(CC_peri_june_abund, CC_peri_july_abund, by="tax_id")
+abundance <- full_join(abundance, CC_peri_aug_abund, by="tax_id")
+abundance <- full_join(abundance, CC_forest_june_abund, by="tax_id")
+abundance <- full_join(abundance, CC_forest_july_abund, by="tax_id")
+abundance <- full_join(abundance, CC_forest_aug_abund, by="tax_id")
+abundance <- full_join(abundance, IBSL_forest_abund, by="tax_id")
+abundance <- full_join(abundance, IBSL_peri_abund, by="tax_id")
+
+#input 0 for count=NA
+abundance <- abundance %>% replace(is.na(.), 0) %>%
+  dplyr::rename(taxID = tax_id) %>%
+  filter(!taxID=="unassigned") #remove 'unassigned' ID
+
+########### this little bit of code will cut down the sample ID columns ###############
+###### https://community.rstudio.com/t/shorten-column-names-in-data-frame/143129 ######
+
+long_names <- colnames(abundance)
+
+short_names <- lapply(
+  X = strsplit(x = long_names, split = "_"),
+  FUN = function(x) paste0(head(x, n = 1)))
+
+colnames(abundance) <- short_names
+########################################################################################
+
+# Regarding "count" values in abundance table: PLEASE NOTE!! (from Emu Github documentation):
+# "Note: Estimated read counts are based on likelihood probabilities and therefore may not be integer values."
+
+#change counts to integers, remove duplicate FDNAs, arrange FDNA numerically
+abundance <- abundance %>%
+  pivot_longer(-taxID, names_to= "FDNA", values_to = "count") %>% #pivot longer, ignore the taxID column and pivot FDNA and counts
+  mutate(count = round(count, digits=0)) %>% #round "counts" to nearest whole number
+  filter(!FDNA %in% removeFDNAs.v) %>%
+  arrange(FDNA) %>% #order by FDNA#
+  pivot_wider(names_from = FDNA, values_from = count)
+
+#### ABUNDANCE is a df where: SAMPLES are COLUMNS, TAXA are ROWS, TAXID is a COLUMN
 # #Save abundance table to a rdata file
 # saveRDS(abundance, file = here("abundance_140_03.22.23.rds"))
+# 
+# #Restore abundance from the rdata file
+# #rows are taxa, columns are samples
+# abundance <- readRDS(file = "abundance_140_03.22.23.rds") 
 
-#Restore abundance from the rdata file
-#rows are taxa, columns are samples
-abundance <- readRDS(file = "abundance_140_03.22.23.rds") 
-
-# ### THIS IS THE 160 - includes duplicates - abundance data
-# abundance <- readRDS(file = "abundance_03.01.23.rds")
 
 ################ CREATE WORKING VERSIONS OF ABUNDANCE ######################
 
@@ -276,15 +239,15 @@ abundance_long <- abundance %>%
 
 
 #########################################################################
-# #OTUs per sample (for results text)
-# abundance %>% pivot_longer(-taxID, names_to = "FDNA", values_to="count") %>%
-#   filter(count != 0) %>%
-#   group_by(FDNA) %>%
-#   summarise(n_OTU = length(count)) %>%
-#   summarise(sd = sd(n_OTU),
-#             mean = mean(n_OTU),
-#             max = max(n_OTU),
-#             min = min(n_OTU))
+#OTUs per sample (for results text)
+abundance %>% pivot_longer(-taxID, names_to = "FDNA", values_to="count") %>%
+  filter(count != 0) %>%
+  group_by(FDNA) %>%
+  summarise(n_OTU = length(count)) %>%
+  summarise(sd = sd(n_OTU),
+            mean = mean(n_OTU),
+            max = max(n_OTU),
+            min = min(n_OTU))
 #########################################################################
 
 
@@ -296,7 +259,8 @@ min_n_seq <- abundance_long %>% group_by(FDNA) %>%
   summarise(n_seq = sum(count)) %>%
   summarise(min = min(n_seq)) %>% 
   pull(min)
- 
+
+#### summary info on abundance data ####
 # #mean and std dev of sequence length (also in the nanoq summary plots)
 # seq_length_summary <- abundance_long %>% group_by(FDNA) %>%
 #   summarise(n_seq = sum(count)) %>%
@@ -312,30 +276,27 @@ min_n_seq <- abundance_long %>% group_by(FDNA) %>%
 #   group_by(FDNA) %>%
 #   summarise(N = sum(count)) %>%
 #   arrange(N) %>% print(n=20)
+##############################################
 
 #### VISUALIZE RAREFACTION CURVES ###########
 
-# #visualize the rarefaction curve in base R
-# rarecurve(abundance_vegan, step=1000)
-# abline(v=74517, col="blue")
-
-# #pull the data from rarecurve() **THANKS RIFFOMONAS PROJECT!
-# rarecurve_data <- rarecurve(abundance_vegan, step=1000)
-# #clean it up, plot rarecurve() data in ggplot **THANKS RIFFOMONAS PROJECT!
-# png(here("rarecurves140.png"), width=1000, height=600)
-# map_dfr(rarecurve_data, bind_rows) %>%
-#   bind_cols(FDNA = rownames(abundance_vegan),.) %>%
-#   pivot_longer(-FDNA, names_to = "n_seq", values_to = "species_obs") %>%
-#   left_join(samp_site, by="FDNA") %>%
-#   drop_na() %>%
-#   mutate(n_seq = as.numeric(str_replace(n_seq, "N", ""))) %>% #change the N### to just # of sequences
-#   ggplot(aes(x=n_seq, y=species_obs, group=FDNA)) +
-#   geom_line() +
-#   geom_vline(xintercept = min_n_seq, color="red") +
-#   labs(x="Number of Sequences", y="Number of Bacterial Species Observed") +
-#   theme(axis.text = element_text(size=15),
-#         axis.title = element_text(size=18))
-# dev.off()
+#pull the data from rarecurve() **THANKS RIFFOMONAS PROJECT!
+rarecurve_data <- rarecurve(abundance_vegan, step=1000)
+#clean it up, plot rarecurve() data in ggplot **THANKS RIFFOMONAS PROJECT!
+png(here("rarecurves140.png"), width=1000, height=600)
+map_dfr(rarecurve_data, bind_rows) %>%
+  bind_cols(FDNA = rownames(abundance_vegan),.) %>%
+  pivot_longer(-FDNA, names_to = "n_seq", values_to = "species_obs") %>%
+  left_join(samp_site, by="FDNA") %>%
+  drop_na() %>%
+  mutate(n_seq = as.numeric(str_replace(n_seq, "N", ""))) %>% #change the N### to just # of sequences
+  ggplot(aes(x=n_seq, y=species_obs, group=FDNA)) +
+  geom_line() +
+  geom_vline(xintercept = min_n_seq, color="red") +
+  labs(x="Number of Sequences", y="Number of Bacterial Species Observed") +
+  theme(axis.text = element_text(size=15),
+        axis.title = element_text(size=18))
+dev.off()
 
 ####### CREATE RAREFIED ABUNDANCE DATA (counts of all obs species, rarefied to min_n_seq ) #############
 ################### CALCULATE ALPHA DIVERSITY METRICS ON RAREFIED DATA #################################
@@ -359,47 +320,47 @@ min_n_seq <- abundance_long %>% group_by(FDNA) %>%
 ###### Estimate alpha diversity metrics using rarefaction #######
 ##### using vegan:rrarefy() to resample the count numbers #######
 
-#commented out on Dec 18 2023
-# #do a lil set.seed so I can reproduce these results
-# set.seed(2111994)
-# 
-# #initialize a list to store results
-# rare_alpha.ls <- list()
-# 
-# #for 100 iterations, rarefy count data, calculate alpha diversity, save, and repeat
-# for(i in 1:100){
-#   
-#   #rarefy data (one iteration)
-#   #output in vegan format: taxa are the columns, samples are the rows, sampleIDs are row names
-#   rareit_vegan <- rrarefy(abundance_vegan, sample=min_n_seq) #min_n_seq = 74,517
-#   
-#   #convert rareit_vegan to phyloseq abundance table
-#   #rows are taxa, columns are samples - in numerical order, rowname is taxID
-#   rareit_phylo <- rareit_vegan %>% t()
-#   #convert phyloseq to otu table
-#   rareit_phylo_otu <- otu_table(rareit_phylo, taxa_are_rows=TRUE)
-#   
-#   #use phyloseq::estimate_richness() to get Richness, Shannon, Simpson diversity
-#   #calculate Shannon evenness manually
-#   #add column for iteration number, just to keep track
-#   out_it <- estimate_richness(rareit_phylo_otu, measures = c("Observed", "Shannon", "Simpson")) %>%
-#     mutate(Evenness = Shannon/log(Observed)) %>% #calculate evenness (Shannon/ln(Richness))
-#     # mutate(iteration = i) %>%
-#     rownames_to_column(var="FDNA")
-#   
-#   #save each iteration as an object in a list
-#   rare_alpha.ls[[i]] <- out_it
-#   
-# }
-# 
-# #collapse the rareit_output list (one list item per iteration) down to a df
-# #counts of all taxa for all samples, across 100 iterations
-# #really big, n_iterations * 140 samples number of rows
-# rare_alpha.df <- do.call(rbind, rare_alpha.ls) 
+#do a lil set.seed for reproducible results
+set.seed(2111994)
+
+#initialize a list to store results
+rare_alpha.ls <- list()
+
+#for 100 iterations, rarefy count data, calculate alpha diversity, save, and repeat
+for(i in 1:100){
+
+  #rarefy data (one iteration)
+  #output in vegan format: taxa are the columns, samples are the rows, sampleIDs are row names
+  rareit_vegan <- rrarefy(abundance_vegan, sample=min_n_seq) #min_n_seq = 74,517
+
+  #convert rareit_vegan to phyloseq abundance table
+  #rows are taxa, columns are samples - in numerical order, rowname is taxID
+  rareit_phylo <- rareit_vegan %>% t()
+  #convert phyloseq to otu table
+  rareit_phylo_otu <- otu_table(rareit_phylo, taxa_are_rows=TRUE)
+
+  #use phyloseq::estimate_richness() to get Richness, Shannon, Simpson diversity
+  #calculate Shannon evenness manually
+  #add column for iteration number, just to keep track
+  out_it <- estimate_richness(rareit_phylo_otu, measures = c("Observed", "Shannon", "Simpson")) %>%
+    mutate(Evenness = Shannon/log(Observed)) %>% #calculate evenness (Shannon/ln(Richness))
+    # mutate(iteration = i) %>%
+    rownames_to_column(var="FDNA")
+
+  #save each iteration as an object in a list
+  rare_alpha.ls[[i]] <- out_it
+
+}
+
+#collapse the rareit_output list (one list item per iteration) down to a df
+#counts of all taxa for all samples, across 100 iterations
+#really big, n_iterations * 140 samples number of rows
+rare_alpha.df <- do.call(rbind, rare_alpha.ls)
+
 # #save it
 # saveRDS(rare_alpha.df, file="rare_alpha.df_v12.18.2023.RDS")
-#load it
-rare_alpha.df <- readRDS(file = "rare_alpha.df_v12.18.2023.RDS") 
+# #load it
+# rare_alpha.df <- readRDS(file = "rare_alpha.df_v12.18.2023.RDS") 
 
 #group by sample, average diversity indices for a given FDNA sample across all 100 iterations
 #join summary data to pero_datashort (metadata)
@@ -519,38 +480,15 @@ rare_alpha_summary %>%
 
 ########## BUILD A MODEL #################
 
-#cedar creek by month
-
-# cc <- rare_alpha.avg %>% filter(location=="CCESR") %>%
-#   mutate(month=as.character(month)) %>%
-#   mutate(month = factor(month, levels=c("June", "July", "August")))
-#   
-# mod <- lm(Observed ~ site_type + month, data=cc)
-# summary(mod)
-# 
-# mod <- lm(Shannon ~ site_type + month, data=cc)
-# summary(mod)
-# 
-# mod <- lm(Simpson ~ site_type + month, data=cc)
-# summary(mod)
-# 
-# mod <- lm(Evenness ~ site_type + month, data=cc)
-# summary(mod)
-
-
-########################################
-
 #### before modeling: ######
 
-# #visualize response distribution
-# hist(rare_alpha.avg$Observed) #normalish
-# hist(rare_alpha.avg$Shannon) #slight left skew
-# hist(rare_alpha.avg$Simpson) #left skew
-# hist(rare_alpha.avg$Evenness) #slight left skew
+#visualize response distribution
+hist(rare_alpha.avg$Observed) #normalish
+hist(rare_alpha.avg$Shannon) #slight left skew
+hist(rare_alpha.avg$Simpson) #left skew
+hist(rare_alpha.avg$Evenness) #slight left skew
 
 ### MODELING ###
-
-###-----all of these models have been run with Dec 18 2023 version of alpha_rare
 
 #### RICHNESS MODEL - LINEAR REGRESSION ####
 
@@ -559,14 +497,12 @@ rich.mod <- lm(rare_obs ~ landscape_type + site_type + landscape_type:site_type 
                  sex + reproductive + body_mass + month.n, 
                data=rare_alpha.avg)
 summary(rich.mod)
+rich.summ <- summary(rich.mod)
 anova(rich.mod)
 # #model diagnostics
 # # make a null model and compare full to null by AIC (difference of 2-4 is meaningful, lower AIC wins)
 # null.mod <- lm(rare_obs ~ 1, data=rare_alpha.avg)
 # AIC(null.mod, rich.mod)
-# # 2. check out the summary
-rich.summ <- summary(rich.mod)
-# anova(rich.mod)
 #to get 95% CI for model params
 richCI <- as.data.frame(confint(rich.mod, level=0.95)) %>% #gives CI for all params, can also specify which you want
   rownames_to_column(var = "param")
@@ -611,8 +547,6 @@ tab_model(rich.mod, file="mod_richness.doc")
 # library(lmtest)
 # bptest(rich.mod) #for regressions for homoscedasticity (use if your data is goofy, ignore elsewise)
 # #Levine test (use in place of bp) for glm or mixed-models
-# 
-# ####### JASMINE has good explanations with more detail in her code for Lucie and Mathilde
 
 
 #### SHANNON MODEL - LINEAR REGRESSION ####
@@ -621,8 +555,8 @@ shan.mod <- lm(rare_shan ~ landscape_type + site_type + landscape_type:site_type
                  sex + reproductive + body_mass + month.n, 
                data=rare_alpha.avg)
 summary(shan.mod)
-anova(shan.mod)
 shan.summ <- summary(shan.mod)
+anova(shan.mod)
 #to get 95% CI for model params
 shanCI <- as.data.frame(confint(shan.mod, level=0.95)) %>% #gives CI for all params, can also specify which you want
   rownames_to_column(var = "param")
@@ -712,7 +646,7 @@ tab_model(even.mod, file="mod_evenness.doc")
 # AIC(null.mod, even.mod)
 
 
-######### visualize ###########
+######### visualize alpha diversity metrics across landscape-habitat pairings ###########
 
 ########### WORKING HERE - to show pvalues on plots
 #### but can't do it with facets... so figure that out
@@ -738,9 +672,12 @@ kruskal.test(rare_even ~ loc_site,  data = rare_alpha.avg)
 dunnTest(rare_even ~ loc_site,  data = rare_alpha.avg,
          method="holm")
 
-### NOTE: (1/18/24) the tests above run with corrected pvalues for multiple comparisons
-### but the stat_compare_means() fxn in ggplot2 only shows the unadjusted pvalues
-## so the pvalues shown in the final figure are UNADJUSTED
+### NOTE: the tests above output corrected p-values for multiple comparisons
+### but the stat_compare_means() fxn in ggpubr with ggplot2 only shows the unadjusted p-values
+## so the p-values shown in the figures output by the following code are UNADJUSTED
+## J.M. ended up just manually updating the p-values in the final version of the figure using Inkscape *ugh*
+## therefore, ADJUSTED values are show in the figures in the published manuscript, those values differ slightly
+## from the values that will be shown on figures generated with the following code (which are unadjusted)
 
 #plot observed
 
@@ -900,11 +837,6 @@ shan.plot <- rare_alpha.avg %>%
 shan.plot$layers[[which_layers(shan.plot, "GeomSignif")]]$aes_params$textsize <- 6
 
 
-# c("#2c7c94", "#a6d0c8", 
-#   "#c4aa23", "#fbe45b")
-# 
-# c("#0060A2", "#61CFFA",
-#   "#A67326", "#F0C907")
 
 #plot Simpson
 
@@ -1017,31 +949,17 @@ even.plot$layers[[which_layers(even.plot, "GeomSignif")]]$aes_params$textsize <-
 
 ######### COMPOSITE PLOT (publication-ready using cowplot) ##########
 
-## NOTE: the pvalues shown in the final figure are UNADJUSTED for multiple comparisons
+## NOTE: the pvalues shown in the output figure are UNADJUSTED for multiple comparisons
+## the values were manually updated in Inkscape to show the adjusted pvalues in the manuscript figure
 
 library(cowplot)
 
-png(here("alphadiv_plotv2.png"), width=16, height=12, units = "in", res=600)
+png(here("alphadiv_plot-unadjP.png"), width=16, height=12, units = "in", res=600)
 plot_grid(obs.plot, shan.plot, simp.plot, even.plot, 
           labels = NULL,label_size = 28)
 dev.off()
 
-
-# cvdPlot(plot)
-
-####### (simpler) PLOT IT #############
-
-# library(ggbeeswarm)
-# 
-# rare_alpha.avg %>% 
-#   select(rare_obs, rare_shan, rare_simp, rare_Even, loc_site) %>%
-#   pivot_longer(-loc_site, values_to = "est", names_to="stat") %>%
-#   mutate(stat = factor(stat, levels=c("rare_obs", "rare_shan", "rare_simp", "rare_even"))) %>%
-#   ggplot(aes(x=loc_site, y=est, fill=loc_site)) +
-#   geom_boxplot() +
-#   geom_beeswarm(alpha=0.3) +
-#   facet_wrap(~stat, scales = "free_y", ncol=4)
-
+# cvdPlot(plot) #visualize for colorblind-friendliness
 
 ################################### END ALPHA DIVERSITY #####################################
 
@@ -1059,16 +977,16 @@ dev.off()
 ### THIS WILL COMPUTE a distance matrix between all the samples based on the full microbiome community
   ### samples are rarefied to least numerous sample (74 517) before computing the distance matrix
 
-# #avgdist needs as input: dataframe with columns as OTU and rows as samples (sampleID in row name)
-# #confirm that FDNA numbers are already in numerical order
-# abundance_dist <- abundance_vegan %>% #rows are mice, columns are OTUs
-#   avgdist(sample=74517, iterations=100, dmethod="bray") #calculate the BrayCurtis dist - rarefy and repeat 100 iterations
-# 
+#avgdist needs as input: dataframe with columns as OTU and rows as samples (sampleID in row name)
+#confirm that FDNA numbers are already in numerical order
+abundance_dist <- abundance_vegan %>% #rows are mice, columns are OTUs
+  avgdist(sample=74517, iterations=100, dmethod="bray") #calculate the BrayCurtis dist - rarefy and repeat 100 iterations
+
 # # Save to a rdata file
 # saveRDS(abundance_dist, file = here("abundance_dist_140_03.22.23.rds"))
-
-# Restore from the rdata file
-abundance_dist <- readRDS(file = "abundance_dist_140_03.22.23.rds")
+# 
+# # Restore from the rdata file
+# abundance_dist <- readRDS(file = "abundance_dist_140_03.22.23.rds")
 
 #stress plot (scree plot) (check the k values! get STRESS down to < 0.1)
 # library(goeveg) #for dimcheckMNDS() function
@@ -1077,7 +995,7 @@ abundance_dist <- readRDS(file = "abundance_dist_140_03.22.23.rds")
 ################# NMDS ######################
 
 #run NMDS on distance matrix (FDNA IN NUMERICAL ORDER!)
-set.seed(19940211) #best solution not repeated after 20 tries >> IS THIS A PROBLEM??
+set.seed(19940211) 
 nmds_results <- metaMDS(abundance_dist, k=4) 
 
 #create tibble of NMDS values, add FDNA numbers, metadata
@@ -1091,12 +1009,6 @@ pero_nmds <- nmds_results %>%
 centroid <- pero_nmds %>% group_by(loc_site) %>%
   summarise(NMDS1=mean(NMDS1), NMDS2=mean(NMDS2))
 
-# c("#a65852", "#c4aa23",
-#   "#a6d0c8", "#fbe45b",
-#   "#2c7c94", "#A0999A")
-# 
-# c("#0060A2", "#61CFFA",
-#   "#A67326", "#F0C907")
 
 #plot NMDS, centroids, and ellipses
 png(here("community_NMDS_k4.png"), width=700, height = 600)
@@ -1126,17 +1038,13 @@ pero_nmds %>%
            label = paste("Stress:", round(nmds_results$stress, digits = 3)))
 dev.off()
 
-# #Colorblind friendliness
+# #Check colorblind friendliness
 # cvdPlot(plot)
-# 
-# #other colors
-# values=c("#A82433", "#EA99A3",
-#          "#0060A2", "#61CFFA")
 
 
-######### Reviewer asked to see NMDS in 2 vs 3 vs 4 dimensions ###########
+######### For supplement: visualize NMDS in 2 vs 3 vs 4 dimensions ###########
 
-###### four dimensions to fit in a 3-panel figure
+###### reformat figure for four dimensions to match k=2 and k=3 figures for multi-panel figure
 nmds_k4 <- pero_nmds %>%
   ggplot(aes(x=NMDS1, y=NMDS2, color=loc_site)) +
   geom_point(size = 2) +
@@ -1166,7 +1074,7 @@ nmds_k4 <- pero_nmds %>%
   annotate(geom = "label", x=0.42, y=0.52, size = 7,
            label = paste("Stress:", round(nmds_results$stress, digits = 3)))
 
-#####two dimensions
+#####two dimensions (k=2)
 #run NMDS on distance matrix (FDNA IN NUMERICAL ORDER!)
 set.seed(19940211) #best solution not repeated after 20 tries >> IS THIS A PROBLEM??
 nmds_results2 <- metaMDS(abundance_dist, k=2) 
@@ -1217,7 +1125,7 @@ nmds_k2 <- pero_nmds2 %>%
 
 #####three dimensions
 #run NMDS on distance matrix (FDNA IN NUMERICAL ORDER!)
-set.seed(19940211) #best solution not repeated after 20 tries >> IS THIS A PROBLEM??
+set.seed(19940211) 
 nmds_results3 <- metaMDS(abundance_dist, k=3) 
 
 #create tibble of NMDS values, add FDNA numbers, metadata
@@ -1270,29 +1178,6 @@ plot_grid(nmds_k2, nmds_k3, nmds_k4, ncol = 3,
           labels = "AUTO", label_size = 36)
 dev.off()
 
-##################################################################
-# # code from: https://www.rpubs.com/RGrieger/545184
-# pero.spp.fit <- envfit(nmds_results, abundance_vegan, permutations=999)
-# ordiplot(nmds_results, type="n")
-# plot(pero.spp.fit, p.max=0.001, col="black")
-# 
-# 
-# pero_datashort_matrix <- pero_datashort %>% column_to_rownames(var="FDNA")
-# pero.envfit <- envfit(nmds_results, pero_datashort_matrix, permutations=999)
-# head(pero.envfit)
-# ordiplot(nmds_results, type="n")
-# plot(pero.envfit, p.max=0.001, cex=0.7, col="black")
-####################################################################
-
-####### INTERESTING: JUNE communities at CCESR are different than July/Aug
-# #plot CCESR data by month
-# pero_nmds %>%
-#   filter(location=="CCESR") %>%
-#   ggplot(aes(x=NMDS1, y=NMDS2, color=month)) +
-#   geom_point() +
-#   stat_ellipse(show.legend = FALSE)
-
-
 
 ################# STATISTICS ################
 
@@ -1300,7 +1185,7 @@ dev.off()
 # #compare CCESR and IBSL
 # adonis2(as.dist(abundance_dist)~pero_nmds$location) #first thing needs to be a dist matrix
 # 
-# #compare forest vs peridomestic
+# #compare forest vs synanthropic
 # adonis2(as.dist(abundance_dist)~pero_nmds$site_type) #first thing needs to be a dist matrix
 
 #compare location and site_type
@@ -1412,7 +1297,7 @@ anosim(abundance_dist, pero_nmds$loc_site)
 # ##### ABUNDANCE_TAX HAS ALL 160 SAMPLES, their Emu estimated abundance and the taxonomic info for each taxID
 # ##### potential ISSUE: some of the genus field are blank (n=28), they're still in, but maybe remove?
 
-#140 version of abundance_tax (might have entire rows that are 0... idk)
+#140 version of abundance_tax 
 abundance_tax <- readRDS(file = "abundance_tax_03.01.23.rds") %>% #this is abundance_tax with all 160 FDNA samples
   pivot_longer(-c(taxID, species, genus, family, order, class, phylum, superkingdom),
                                names_to = "FDNA", values_to = "count") %>%
@@ -2406,19 +2291,3 @@ pero %>%
 #   select(c(month, location, site_type, FDNA)) %>%
 #   write.csv(here("CCESR_forest_aug.csv"), row.names=FALSE)
 ######################## END write CSV for each group #################################
-
-
-
-
-
-######### HOW MANY CAPTURE FATALITIES? ###############
-# #read in the data
-# pero <- read.csv(here("MN_pero_raw_labeled_v10.8.19.csv"), na.strings=c(""," ","NA"))
-# #tidy columns
-# pero <- clean_names(pero)
-# 
-# #who died?
-# pero <- pero %>% drop_na(species) #477 capture events (not all unique animals)
-# pero_dead <- pero %>% filter(dead=="1") #16 dead animals (not just pspp)
-# 16/477 #3.35% of all captures ended up dead
-######### END CAPTURE FATALITIES ##################
