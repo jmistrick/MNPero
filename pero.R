@@ -959,7 +959,7 @@ centroid <- pero_nmds %>% group_by(loc_site) %>%
 
 
 #plot NMDS, centroids, and ellipses
-png(here("Figure_4.png"), width=700, height = 600)
+png(here("Figure_4.png"), width=16, height=12, units = "in", res=600)
 pero_nmds %>%
   ggplot(aes(x=NMDS1, y=NMDS2, color=loc_site)) +
   geom_point(size = 2) +
@@ -1117,7 +1117,7 @@ nmds_k3 <- pero_nmds3 %>%
 
 
 #cowplot to see k=2 vs k=3 vs k=4
-png(here("Figures_S2.png"), width=1800, height = 600)
+png(here("Figure_S2.png"), width=1800, height = 600)
 plot_grid(nmds_k2, nmds_k3, nmds_k4, ncol = 3, 
           labels = "AUTO", label_size = 36)
 dev.off()
@@ -1307,7 +1307,7 @@ facet_labs <- as_labeller(c("Agricultural_Forest" = "Agricultural-Forest",
                             "Undeveloped_Synanthropic" = "Undeveloped-Synanthropic"))
 
 #plot phylum level relative abundance
-png(here("Figure_3.png"), width=1000, height=600)
+png(here("Figure_3.png"), width=10, height=5, units = "in", res=600)
 phy_relabund %>%
   ggplot(aes(x=FDNA, y=rel_abund, fill=phylum)) +
   geom_bar(stat="identity", aes(fill=phylum), width=1) +
@@ -1438,7 +1438,7 @@ path_spp <- rbind(phi_pathogens, my_pathogens) %>%
   arrange(genus, species) %>%
   distinct(genus, species, .keep_all = TRUE) %>%
   unite(gspp, genus, species, sep=" ", remove=FALSE)
-write.csv(path_spp, here("Supplementary_Table_S-1_Pathogen_List.csv")) 
+write.csv(path_spp, here("Table_S1.csv")) 
 path_spp.v <- path_spp$gspp
 
 #filter abundance path df (essentially abundance matrix) for pathogenic species
